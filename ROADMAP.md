@@ -1,67 +1,83 @@
 # Audio-Transcriber Roadmap
 
-## Core Pipeline Implementation
+## Current implementation status
+
+This roadmap reflects the existing implementation, identified gaps from the audit, and the next deliverables.
 
 ### Phase 1: Project Infrastructure
-- [x] Create pyproject.toml with uv configuration
-- [x] Create config.yaml with pipeline settings
-- [x] Create directory structure (src/, scripts/)
-- [ ] Setup Hugging Face authentication mechanism
+- [x] `pyproject.toml` with `uv` configuration
+- [x] `config.yaml` with pipeline settings
+- [x] Repository structure created (`src/`, `scripts/`)
+- [x] Hugging Face authentication helper for pyannote and token management
 
 ### Phase 2: Core Modules
-- [x] Implement `analyze.py` (Step 1: Audio analysis and metadata)
-- [x] Implement `preprocess.py` (Step 2: Adaptive audio preprocessing)
-- [x] Implement `diarize.py` (Step 3: Speaker diarization)
-- [x] Implement `transcribe.py` (Steps 3 & 4: Whisper transcription)
-- [x] Implement `compare.py` (Step 5: Model comparison and deviation marking)
-- [x] Implement `editor.py` (Step 6: Web-based audio editor)
+- [x] `src/analyze.py` — audio analysis and metadata extraction
+- [x] `src/preprocess.py` — adaptive audio preprocessing
+- [x] `src/diarize.py` — speaker diarization wrapper
+- [x] `src/transcribe.py` — WhisperX transcription and exporter
+- [x] `src/compare.py` — model comparison and prioritized review output
+- [~] `src/editor.py` — export SRT / manual instructions (placeholder for web editor)
 
 ### Phase 3: Orchestration & CLI
-- [x] Implement `run_pipeline.py` (Main orchestration script)
-- [x] Add CLI argument parsing (--input, --output-dir, --step, --workers, etc.)
-- [x] Add batch processing support
-- [x] Add single-file processing support
-- [x] Add worker pool for parallel processing
+- [x] `scripts/run_pipeline.py` — pipeline orchestration
+- [x] CLI argument parsing (`--input`, `--output-dir`, `--step`, `--workers`, etc.)
+- [x] Batch folder processing with worker pool
+- [x] Single-file processing support
+- [~] Step-level execution is present, but some step interdependencies and metadata reuse need hardening
 
 ### Phase 4: Configuration & Utilities
-- [x] Create `utils.py` (Helper functions, logging, error handling)
-- [x] Create `config.py` (Configuration loading and validation)
-- [x] Setup logging system
-- [x] Add database module (`database.py`) for tracking and logging
-- [x] Add spell-checking module (`spell_check.py`) for Norwegian text
-- [x] Add vocabulary module (`vocabulary.py`) for custom words and initial prompts
-- [ ] Add VAD (Voice Activity Detection) optimization
+- [x] `src/utils.py` — logging, file helpers, JSON utilities
+- [x] `src/config.py` — YAML configuration loader
+- [x] Logging setup with console/file handlers
+- [~] `src/database.py` implemented but not integrated into pipeline
+- [~] `src/spell_check.py` prototype exists but not integrated
+- [~] `src/vocabulary.py` prototype exists but not integrated
+- [ ] VAD configuration and actual model selection should be hardened
 
-### Phase 5: Features & Enhancements
-- [ ] Word-level confidence filtering
-- [ ] Norwegian spell-checking integration
-- [ ] Custom word list support (proper nouns, technical terms)
-- [ ] Automatic initial prompt generation for Whisper
-- [ ] SQLite database for logging and performance tracking
-- [ ] Web UI for subtitle editing with waveform visualization
+### Phase 5: Feature gap closing
+- [ ] Word-level confidence-based review filtering
+- [x] Norwegian spell-checking integration in pipeline (basic integration via `--spell-check`)
+- [x] Automatic `initial_prompt` / vocabulary injection for Whisper (via `--vocabulary-file`)
+- [ ] Proper stereo handling for one-speaker-per-channel audio
+- [ ] More robust alignment and diffing beyond simple overlap / SequenceMatcher
+- [x] Full audit logging / job tracking using SQLite or JSON logs (basic integration via `--use-database`)
+- [ ] True editor UI with waveform and speaker-aware review
 
-### Phase 6: Performance Optimization
-- [ ] Apple Silicon optimization (CoreML/MLX support)
-- [ ] GPU acceleration support (CUDA for Linux/Windows)
-- [ ] Model caching optimization
-- [ ] Memory usage optimization for batch processing
+### Phase 6: Optimization
+- [ ] Apple Silicon acceleration with CoreML / MLX support
+- [ ] CUDA/GPU support for Linux/Windows
+- [ ] Model caching and memory optimization for batch jobs
+- [ ] Performance profiling and resource usage monitoring
 
-### Phase 7: Testing & Documentation
+### Phase 7: Quality & documentation
 - [ ] Add unit tests
 - [ ] Add integration tests
-- [ ] Add example workflows to README
+- [ ] Add CI pipeline
 - [ ] Add troubleshooting guide
-- [ ] Add API documentation
+- [ ] Add example workflows to README
+- [ ] Add API documentation / developer reference
 
-### Known Issues & Blockers
-- [ ] Faster-whisper currently CPU-only on Mac M1/M2
-- [ ] Need to evaluate CoreML conversion overhead
-- [ ] PyAnnote privacy concerns for speaker diarization
-- [ ] Whisper confidence score calibration issues
+## Key audit findings to address next
 
-### Future Considerations
-- Language model fine-tuning on domain-specific vocabulary
-- Real-time transcription support
-- REST API endpoint for pipeline
-- Docker containerization
-- Support for other Nordic languages (Swedish, Danish, Finnish)
+- `transcribe.py` ignores several transcription config parameters in current WhisperX invocation.
+- `analyze.py` language detection depends on `whisper` while `pyproject.toml` lists only `whisperx`.
+- `diarize.py` requires Hugging Face auth token and does not use `segmentation_model` from config.
+- `preprocess.py` collapses stereo audio into mono; real-channel separation is not handled optimally.
+- `database.py`, `spell_check.py`, and `vocabulary.py` are present as modules but are not wired into the pipeline.
+- There is no test coverage or CI yet.
+
+## Near-term priorities
+
+1. Fix transcription config usage in `src/transcribe.py`
+2. Make `src/analyze.py` language detection resilient without requiring `whisper` as a separate dependency
+3. Add Hugging Face token handling and validate pyannote auth flow
+4. Integrate `database.py` for job/log tracking and `spell_check.py` for optional review support
+5. Add unit tests for `analyze.py`, `preprocess.py`, `diarize.py`, and `compare.py`
+
+## Future ideas
+
+- Fine-tune a Norwegian ASR model on domain-specific vocabulary
+- Add REST API / local server wrapper around pipeline
+- Provide a web-based review editor with waveform and speaker labels
+- Containerize with Docker for reproducible deployments
+- Add support for Swedish / Danish / Finnish in addition to Norwegian

@@ -103,19 +103,22 @@ def detect_stereo_separation(
 
 def detect_language(file_path: Path) -> str:
     """
-    Detect language using whisper's built-in language detection.
+    Detect language using whisperx/faster-whisper built-in language detection.
     
-    Default to Norwegian ('no') if detection fails or is inconclusive.
+    Falls back to Norwegian ('no') if detection fails or is inconclusive.
+    This avoids requiring the separate `openai-whisper` package.
     """
     try:
-        import whisper
+        import whisperx
 
         # Load audio for language detection
-        audio = whisper.load_audio(str(file_path))
-        # Detect using Whisper's built-in decoder (faster than full transcription)
-        result = whisper.detect_language(audio)
-        logger.info(f"Detected language for {file_path.name}: {result}")
-        return result
+        audio = whisperx.load_audio(str(file_path))
+        # Detect using WhisperX's built-in decoder (faster than full transcription)
+        model = whisperx.load_model("tiny", device="cpu", compute_type="int8")
+        result = model.transcribe(audio, task="transcribe")
+        detected = result.get("language", "no")
+        logger.info(f"Detected language for {file_path.name}: {detected}")
+        return detected
     except Exception as e:
         logger.warning(f"Language detection failed for {file_path}: {e}, defaulting to 'no'")
         return "no"

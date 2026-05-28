@@ -86,6 +86,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+## [0.1.1] - 2026-05-28
+
+### Added
+- `ISSUES.md` tracking known bugs and feature gaps from audit
+- Unit tests for core modules (`tests/test_analyze.py`, `tests/test_preprocess.py`, `tests/test_compare.py`, `tests/test_diarize.py`)
+- `pytest` configuration in `pyproject.toml` with `pythonpath = ["."]`
+- Hugging Face auth helper (`check_hf_auth`) in `src/diarize.py` with graceful error messages
+- CLI flags `--use-database`, `--vocabulary-file`, `--spell-check` in `scripts/run_pipeline.py`
+- Integration of `database.py`, `spell_check.py`, and `vocabulary.py` into pipeline orchestration
+
+### Fixed
+- `src/transcribe.py` now passes `beam_size`, `vad_filter`, `condition_on_previous_text`, and `initial_prompt` into the WhisperX transcription call
+- `src/analyze.py` language detection now uses `whisperx` instead of standalone `whisper`, removing dependency mismatch
+- `src/compare.py` bug: `TranscriptionComparer.__init__` referenced `config` instead of `self.config`
+- `pyproject.toml` invalid `[tool.uv] python-version` field removed; `ffmpeg-python` version constraint relaxed to `>=0.2.0`
+
+### Changed
+- `README.md` rewritten to reflect actual proof-of-concept status and audit findings
+- `ROADMAP.md` updated with accurate implementation status and near-term priorities
+
 ## [0.1.0] - 2026-05-28
 
 ### Added

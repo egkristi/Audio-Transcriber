@@ -117,13 +117,33 @@ class Transcriber:
             # Load audio
             audio = whisperx.load_audio(str(audio_path))
             
+            # Build transcription kwargs from config parameters
+            transcribe_kwargs = {
+                "language": language,
+                "batch_size": 16,
+                "verbose": False,
+                "beam_size": beam_size,
+                "condition_on_previous_text": condition_on_previous_text,
+            }
+            
+            if initial_prompt:
+                transcribe_kwargs["initial_prompt"] = initial_prompt
+                logger.debug(f"Using initial_prompt ({len(initial_prompt)} chars)")
+            
+            if vad_filter:
+                transcribe_kwargs["vad_filter"] = True
+                logger.debug("VAD filtering enabled")
+            
             # Transcribe
-            result = self.model.transcribe(
-                audio,
-                language=language,
-                batch_size=16,
-                verbose=False
-            )
+            result = self.model.transcribe(audio, **transcribe_kwargs)
+            
+            # Align for word-level timestamps if requested
+            if word_timestamps:
+                try:
+                    logger.debug("Running alignment for word-level timestamps")
+                    result = self.model.align(audio, result["segments"], language)
+                except Exception as align_err:
+                    logger.warning(f"Word-level alignment failed: {align_err}")
             
             # Convert to our format
             segments = []

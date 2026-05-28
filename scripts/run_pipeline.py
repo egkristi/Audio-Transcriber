@@ -33,6 +33,9 @@ from src.diarize import diarize_audio
 from src.transcribe import transcribe_audio, TranscriptionSegment
 from src.compare import compare_transcriptions
 from src.editor import export_for_manual_editing
+from src.database import TranscriptionDatabase
+from src.vocabulary import load_vocabulary
+from src.spell_check import check_transcription
 
 logger = get_logger("pipeline")
 
@@ -70,7 +73,10 @@ class AudioTranscriberPipeline:
         diarize: bool = True,
         compare_models: bool = False,
         primary_model: str = "NbAiLab/nb-whisper-large-verbatim",
-        secondary_model: str = "openai/whisper-large-v3"
+        secondary_model: str = "openai/whisper-large-v3",
+        db: Optional[TranscriptionDatabase] = None,
+        vocab_file: Optional[Path] = None,
+        spell_check: bool = False
     ) -> Dict:
         """
         Process a single audio file through the pipeline.
@@ -83,6 +89,9 @@ class AudioTranscriberPipeline:
             compare_models: Run secondary model comparison
             primary_model: Primary transcription model
             secondary_model: Secondary transcription model
+            db: Optional TranscriptionDatabase for job tracking
+            vocab_file: Optional custom vocabulary JSON file
+            spell_check: Enable Norwegian spell-checking on output
             
         Returns:
             Dict with pipeline results
@@ -93,6 +102,10 @@ class AudioTranscriberPipeline:
         
         file_output_dir = ensure_dir(output_dir / file_path.stem)
         results = {"file": file_path.name, "status": "pending", "steps": {}}
+        
+        job_id = None
+        if db:
+            job_id = db.create_job(file_path)
         
         try:
             # Step 1: Analyze
@@ -168,6 +181,15 @@ class AudioTranscriberPipeline:
             if not steps or "transcribe" in steps:
                 logger.info("\nSTEP 3/4: Transcription (Primary Model)")
                 transcription_config = self.config.data
+                
+                # Build initial prompt from vocabulary if provided
+                initial_prompt = None
+                if vocab_file and vocab_file.exists():
+                    vocab = load_vocabulary(vocab_file=vocab_file)
+                    initial_prompt = vocab.generate_initial_prompt()
+                    transcription_config = dict(transcription_config)
+                    transcription_config["initial_prompt"] = initial_prompt
+                
                 primary_segments, primary_output = transcribe_audio(
                     preprocessed_path,
                     primary_model,
@@ -183,6 +205,32 @@ class AudioTranscriberPipeline:
                     "segments_count": len(primary_segments),
                     "output_file": primary_output
                 }
+                
+                # Log transcription segments to database
+                if db and job_id:
+                    for seg in primary_segments:
+                        db.log_transcription(
+                            job_id=job_id,
+                            model_name=primary_model,
+                            segment_id=seg.id,
+                            start_time=seg.start,
+                            end_time=seg.end,
+                            text=seg.text,
+                            confidence=seg.confidence,
+                            speaker=seg.speaker
+                        )
+                
+                # Optional spell-checking
+                if spell_check:
+                    logger.info("Running spell-check on primary transcription")
+                    spell_config = self.config.get("spell_check", {})
+                    full_text = " ".join(s.text for s in primary_segments)
+                    spell_results = check_transcription(full_text, spell_config)
+                    results["steps"]["spell_check"] = {
+                        "status": "complete",
+                        "error_count": spell_results.get("error_count", 0),
+                        "enabled": spell_results.get("enabled", False)
+                    }
             else:
                 primary_segments = []
             
@@ -235,10 +283,15 @@ class AudioTranscriberPipeline:
             results["status"] = "complete"
             logger.info("\n✓ Pipeline completed successfully")
             
+            if db and job_id:
+                db.update_job_status(job_id, "complete")
+            
         except Exception as e:
             logger.error(f"Pipeline failed: {e}", exc_info=True)
             results["status"] = "failed"
             results["error"] = str(e)
+            if db and job_id:
+                db.update_job_status(job_id, "failed", error_message=str(e))
         
         return results
     
@@ -377,6 +430,26 @@ Examples:
         help="Number of parallel workers for batch processing (default: 4)"
     )
     
+    # Optional integrations
+    parser.add_argument(
+        "--use-database",
+        action="store_true",
+        default=False,
+        help="Enable SQLite job tracking and transcription logging"
+    )
+    parser.add_argument(
+        "--vocabulary-file",
+        type=Path,
+        default=None,
+        help="Path to JSON vocabulary file for initial_prompt injection"
+    )
+    parser.add_argument(
+        "--spell-check",
+        action="store_true",
+        default=False,
+        help="Enable Norwegian spell-checking on transcription output"
+    )
+    
     # Logging
     parser.add_argument(
         "--log-level",
@@ -408,29 +481,39 @@ Examples:
         # Initialize pipeline
         pipeline = AudioTranscriberPipeline(args.config)
         
+        # Initialize optional database
+        db = None
+        if args.use_database:
+            db_path = args.output_dir / "transcriptions.db"
+            db = TranscriptionDatabase(db_path)
+            logger.info(f"Database enabled: {db_path}")
+        
         # Process files
         steps = [args.step] if args.step else None
+        
+        pipeline_kwargs = {
+            "steps": steps,
+            "diarize": args.diarize,
+            "compare_models": args.compare_models,
+            "primary_model": args.primary_model,
+            "secondary_model": args.secondary_model,
+            "db": db,
+            "vocab_file": args.vocabulary_file,
+            "spell_check": args.spell_check,
+        }
         
         if args.input.is_file():
             results = [pipeline.process_single_file(
                 args.input,
                 args.output_dir,
-                steps=steps,
-                diarize=args.diarize,
-                compare_models=args.compare_models,
-                primary_model=args.primary_model,
-                secondary_model=args.secondary_model
+                **pipeline_kwargs
             )]
         else:
             results = pipeline.process_batch(
                 args.input,
                 args.output_dir,
                 workers=args.workers,
-                steps=steps,
-                diarize=args.diarize,
-                compare_models=args.compare_models,
-                primary_model=args.primary_model,
-                secondary_model=args.secondary_model
+                **pipeline_kwargs
             )
         
         # Print summary

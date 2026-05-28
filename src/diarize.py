@@ -16,6 +16,34 @@ from .utils import get_logger, save_json
 logger = get_logger("diarize")
 
 
+def check_hf_auth() -> bool:
+    """
+    Verify that a Hugging Face authentication token is available.
+    
+    Returns True if a token is found, otherwise logs a helpful error
+    and returns False.
+    """
+    try:
+        from huggingface_hub import HfFolder
+        token = HfFolder.get_token()
+        if token:
+            return True
+    except Exception:
+        pass
+
+    # Also check environment variable
+    import os
+    if os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN"):
+        return True
+
+    logger.error(
+        "Hugging Face authentication token not found. "
+        "Please run: uv run huggingface-cli login\n"
+        "Or set the HF_TOKEN environment variable."
+    )
+    return False
+
+
 @dataclass
 class DiarizationSegment:
     """A speaker segment."""
@@ -39,6 +67,12 @@ class Diarizer:
         """Lazily load the diarization model."""
         if self.model is not None:
             return
+        
+        if not check_hf_auth():
+            raise RuntimeError(
+                "Hugging Face authentication required for pyannote diarization. "
+                "Run: uv run huggingface-cli login"
+            )
         
         try:
             from pyannote.audio import Pipeline
