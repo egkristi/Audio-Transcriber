@@ -4,12 +4,12 @@
 
 ### Phase 1: Project Infrastructure
 - [x] Create pyproject.toml with uv configuration
-- [ ] Create config.yaml with pipeline settings
-- [ ] Create directory structure (src/, scripts/)
+- [x] Create config.yaml with pipeline settings
+- [x] Create directory structure (src/, scripts/)
 - [ ] Setup Hugging Face authentication mechanism
 
 ### Phase 2: Core Modules
-- [ ] Implement `analyze.py` (Step 1: Audio analysis and metadata)
+- [x] Implement `analyze.py` (Step 1: Audio analysis and metadata)
 - [ ] Implement `preprocess.py` (Step 2: Adaptive audio preprocessing)
 - [ ] Implement `diarize.py` (Step 3: Speaker diarization)
 - [ ] Implement `transcribe.py` (Steps 3 & 4: Whisper transcription)
