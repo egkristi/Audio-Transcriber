@@ -1,0 +1,97 @@
+# Audio-Transcriber Configuration
+
+# Audio Analysis Settings
+analysis:
+  vad_model: "silero"  # Voice Activity Detection model
+  language_detection: true
+  extract_metadata: true
+
+# Audio Preprocessing Settings
+preprocessing:
+  target_sample_rate: 16000
+  target_channels: 1  # Mono
+  high_pass_filter_hz: 80
+  low_pass_filter_hz: 8000
+  loudness_target_lufs: -16
+  loudness_algorithm: "ITU-R BS.1770-4"
+  denoising: false  # Disabled by default; enable only for high background noise
+  denoising_strength: 0.5
+
+# Speaker Diarization Settings
+diarization:
+  model: "pyannote/speaker-diarization-3.1"
+  segmentation_model: "pyannote/segmentation-3.0"
+  min_speakers: null  # Auto-detect if null
+  max_speakers: null  # Auto-detect if null
+  num_speakers_override: null  # Set to specific number for 2-party conversations (e.g., 2)
+  threshold: 0.5
+  min_duration_on: 0.02
+  min_duration_off: 0.02
+
+# Transcription Models
+transcription:
+  primary_model: "NbAiLab/nb-whisper-large-verbatim"  # Verbatim/exact transcription
+  secondary_model: "openai/whisper-large-v3"  # For comparison (Step 4)
+  fallback_model: "NbAiLab/nb-whisper-large"  # Grammatically corrected version
+  
+  # Whisper settings
+  beam_size: 5
+  best_of: 5
+  patience: 1.0
+  length_penalty: 1.0
+  
+  # Feature flags
+  word_timestamps: true  # ALWAYS true for editor synchronization
+  vad_filter: true  # Filter silence before transcription
+  condition_on_previous_text: true  # Use context from previous segments
+  language: "no"  # Norwegian
+  
+  # Confidence thresholds
+  low_confidence_threshold: 0.85
+  confidence_percentile: 50
+
+# Model Comparison Settings (Step 5)
+comparison:
+  alignment_method: "wer"  # Word Error Rate style diff
+  flag_low_confidence: true
+  flag_disagreement: true
+  min_agreement_score: 0.95
+
+# Batch Processing Settings
+batch:
+  max_workers: 4
+  chunk_size: 10  # Number of files per worker
+  timeout_per_file: 3600  # Seconds (1 hour max per file)
+
+# Output Settings
+output:
+  format: "srt"  # srt or json
+  include_confidence: true
+  include_speaker_labels: true
+  export_intermediates: false  # Save intermediate stages (diarization, model 1 vs 2)
+
+# Logging Settings
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  format: "json"  # json or text
+  save_to_file: true
+  log_dir: "./logs"
+  max_log_size_mb: 100
+  backup_count: 5
+
+# Performance & Optimization
+performance:
+  device: "cpu"  # cpu, cuda, mps (Metal Performance Shaders for Apple Silicon)
+  compute_type: "int8"  # int8, float16, float32
+  device_index: 0  # GPU device index (if CUDA)
+  
+# Spell-checking (Optional, Phase 5)
+spell_check:
+  enabled: false
+  language: "no"  # Norwegian
+  model: "symspellpy"  # or "transformers" for more accuracy
+
+# Custom vocabulary (Optional, Phase 5)
+vocabulary:
+  custom_words_file: null  # Path to JSON file with {word: context} pairs
+  use_initial_prompt: true  # Inject vocabulary into Whisper's initial_prompt

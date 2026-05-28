@@ -13,6 +13,8 @@ For hver lydfil følges stegene nedenfor. De kan kjøres enkeltvis, i batch, ell
 Lydfilen analyseres og all metadata lagres:
 
 - Filnavn, varighet, sample rate, kanaler, bit rate, codec
+- **Reell båndbredde** (smalbånd ~8 kHz vs. bredbånd ~16 kHz) — styrer forhåndsbehandlingen i Steg 2
+- **Antall kanaler** — ekte stereo med én part per kanal gir et bedre alternativ enn diarization
 - Volumprofil (LUFS, peak, dynamikk)
 - Støy- og talende-segmenter (VAD)
 - Språkgjetting (hvis ukjent)
@@ -21,51 +23,60 @@ Metadata lagres som JSON ved siden av lydfilen og brukes i alle senere steg.
 
 ### Steg 2: Forhåndsbehandling
 
-Lyden konverteres og transformeres for å optimalisere transkribering:
+Lyden konverteres og transformeres for å optimalisere transkribering. Behandlingen tilpasses opptaket basert på metadata fra Steg 1 — den kjøres ikke blindt:
 
 - Konvertering til 16 kHz mono WAV
-- High-pass filter (80 Hz) for å fjerne rumling
-- Low-pass filter (8000 Hz) for å fjerne unødvendig høyfrekvent støy
-- Loudness-normalisering (ITU-R BS.1770-4)
-- Eventuell støyreduksjon (valgfritt)
+- High-pass filter (80 Hz) for å fjerne rumling — trygt for alle opptak
+- Low-pass filter (8000 Hz) **kun for smalbånds-telefoni.** Hvis Steg 1 oppdager reell bredbåndslyd (VoLTE/VoWiFi), dropp lavpass — du kaster ellers bort nyttig signal
+- Loudness-normalisering (ITU-R BS.1770-4, mål −16 LUFS)
+- Støyreduksjon: **av som default.** Aggressiv denoising lager artefakter som kan forverre Whisper-resultatet. Slå kun på ved tydelig konstant bakgrunnsstøy, og test med/uten
 
 > **Merk:** Å forhåndsbehandle lyden gir tydelig bedre resultat enn å transkribere rå `.m4a` direkte.
 
-### Steg 3: Transkripsjon fase 1 (med speaker-diarization)
+### Steg 3: Diarization og primærtranskripsjon
 
-Første transkripsjonsrunde kjøres med speaker-separasjon:
+Speaker-diarization kjøres **én gang** her og gjenbrukes på alle senere transkripsjoner — den er uavhengig av ASR-modellen, så det er sløsing å kjøre den per modell-fase.
 
-- **Primær modell:** `Necklace/faster-nb-whisper-large` (CT2-konvertert, rask)
-- **Alternativ modell:** `NbAiLab/nb-whisper-large` (original norsk Whisper, marginalt bedre nøyaktighet)
 - **Speaker-diarization:** `pyannote/speaker-diarization-3.1`
 - **Segmentering:** `pyannote/segmentation-3.0`
+- For to-parts samtaler: sett `min_speakers=2`, `max_speakers=2`
+- **Snarvei:** Hvis Steg 1 viser ekte stereo med én part per kanal, splitt kanalene og transkriber hver for seg — mer presist enn diarization, og dropper pyannote helt
+
+Primærmodell (velg bevisst — se merknad under):
+
+- **`NbAiLab/nb-whisper-large-verbatim`** — ordrett, gjengir det som faktisk ble sagt (anbefalt for samtaleopptak der ordlyd har betydning)
+- **`NbAiLab/nb-whisper-large`** (main) — vasker muntlig språk og retter grammatikk, mer lesbart, men endrer ordlyden
+
+Kjør med `word_timestamps=True` fra start (editoren i Steg 6 trenger det), `beam_size=5` og `vad_filter=True`.
+
 - **Output:** SRT/JSON med tidsstempler og `SPEAKER_00`, `SPEAKER_01`
 
-Resultatet fra fase 1 lagres og brukes som utgangspunkt for sammenligning.
+> **Viktig om modellvalg:** `Necklace/faster-nb-whisper-large` (CT2) og `NbAiLab/nb-whisper-large` (PyTorch) er *samme vekter* — kun ulik motor/presisjon. De gir tilnærmet identisk transkript, så å sammenligne dem mot hverandre gir ingen reell gevinst. CT2-versjonen brukes fordi den er raskere og fordi WhisperX bygger på den.
 
-### Steg 4: Transkripsjon fase 2 (alternativ modell)
+### Steg 4: Andre mening med uavhengig modell (valgfri)
 
-Samme lydfil transkriberes på nytt med en annen modell for å sammenligne resultater:
+Samme lydfil transkriberes på nytt med en **arkitektonisk forskjellig** modell — ikke samme NB-Whisper på en annen motor:
 
-- **Alternativ modell:** `NbAiLab/nb-whisper-large` (hvis fase 1 brukte `Necklace/faster-nb-whisper-large`), eller `openai/whisper-large-v3`
-- Samme speaker-diarization som i fase 1, eller uten hvis fokus er ren tekstnøyaktighet
-- Output lagres separat
+- **Alternativ modell:** `openai/whisper-large-v3` (nyere multilingual base), eller NB-Whisper main hvis primær var verbatim
+- **Gjenbruk speaker-tidslinjen fra Steg 3** — ikke kjør diarization på nytt
+- Output lagres separat for sammenligning i Steg 5
 
-### Steg 5: Konsensus og re-transkripsjon
+### Steg 5: Avviksmarkering (ikke automatisk konsensus)
 
-Systemet sammenligner resultatene fra fase 1 og fase 2:
+Systemet sammenligner fase 1 og fase 2 for å **styre** den menneskelige gjennomgangen — ikke for å avgjøre fasit automatisk:
 
-- Segmenter med lav konfidens (< 0.85) eller uenighet mellom modellene identifiseres
-- Disse segmentene transkriberes på nytt med begge modeller (eventuelt en tredje som tie-breaker)
-- Beste resultat velges per segment basert på konfidens og semantisk likhet
-- Et endelig, konsolidert transkripsjonsdokument genereres
+- Transkriptene aligns på ord/segment-nivå (WER-stil diff)
+- Segmenter med lav konfidens (`avg_logprob` < 0.85) eller uenighet mellom modellene flagges
+- De flaggede segmentene blir en **prioritert arbeidsliste** for Steg 6
+
+> **Merk:** Ikke la maskinen auto-velge «beste» segment. Whisper sin konfidens er ikke kalibrert, og to modeller bommer ofte korrelert på det vanskeligste (navn, tall, overlappende tale) — der hjelper ikke konsensus. Hopp gjerne over hele dette steget hvis tid er knapp; Steg 6 fanger uansett opp feilene.
 
 ### Steg 6: Sluttkorrektur (menneskelig interaksjon)
 
 Uansett modell vil egennavn, tall, adresser og fagord ha noen feil. Derfor er siste steg manuell gjennomgang:
 
 - Åpne den genererte SRT-filen i **Subtitle Edit for Mac** (gratis) eller en teksteditor
-- Spill av lyden parallelt og rett opp feil
+- Spill av lyden parallelt, prioriter de flaggede segmentene fra Steg 5, og rett opp feil
 - Dette er der du henter de siste prosentene mot 100 %
 
 > **Anbefaling:** Vurder å sette opp en lokal webbasert tekst-lyd-editor (f.eks. basert på [wavesurfer.js](https://wavesurfer-js.org/)) for en mer integrert opplevelse direkte i prosjektet.
@@ -84,23 +95,25 @@ cd ~/Audio-Transcriber
 uv sync
 ```
 
-`pyproject.toml` definerer avhengighetene, inkludert:
+`pyproject.toml` definerer avhengighetene. La WhisperX styre versjonene av faster-whisper/ctranslate2/pyannote — disse listes ikke som egne topp-nivå-deps, fordi whisperx pinner kompatible versjoner og du ellers får resolver-konflikter:
 
 ```toml
 [project]
+requires-python = ">=3.11,<3.13"
 dependencies = [
-    "faster-whisper",
-    "whisperx",
-    "pyannote.audio",
+    "whisperx",          # drar inn faster-whisper, ctranslate2 og pyannote.audio
     "ffmpeg-python",
     "pydub",
     "numpy",
+    "pyyaml",
 ]
 ```
 
 > **Merk:** `uv` håndterer automatisk virtuelt miljø, låsing av avhengigheter (`uv.lock`) og installasjon. Du trenger ikke å aktivere et `venv` manuelt — bruk `uv run` for å kjøre kommandoer i prosjektets miljø.
 
-### 4. Hugging Face-token (for speaker-diarization)
+> **Merk om `openai/whisper-large-v3` (Steg 4):** Hvis den krever en annen ctranslate2-versjon enn whisperx tåler, kjør den i et separat uv-miljø i stedet for å tvinge alt inn i ett.
+
+### 2. Hugging Face-token (for speaker-diarization)
 
 1. Lag bruker på [huggingface.co](https://huggingface.co)
 2. Godkjenn vilkårene for:
@@ -109,7 +122,7 @@ dependencies = [
 3. Generer token: **Settings → Access Tokens → New token (Read)**
 4. Logg inn lokalt:
    ```bash
-   huggingface-cli login
+   uv run huggingface-cli login
    ```
 
 ---
@@ -146,10 +159,13 @@ uv run python scripts/run_pipeline.py --input file.m4a --step analyze
 # Kun forhåndsbehandling
 uv run python scripts/run_pipeline.py --input file.m4a --step preprocess
 
-# Kun transkripsjon fase 1 (rask modell)
-uv run python scripts/run_pipeline.py --input file.m4a --step transcribe --model faster-nb-whisper-large
+# Kun diarization
+uv run python scripts/run_pipeline.py --input file.m4a --step diarize
 
-# Kun transkripsjon fase 1 (original norsk modell)
+# Kun transkripsjon (ordrett verbatim-modell)
+uv run python scripts/run_pipeline.py --input file.m4a --step transcribe --model nb-whisper-large-verbatim
+
+# Kun transkripsjon (lesbar main-modell)
 uv run python scripts/run_pipeline.py --input file.m4a --step transcribe --model nb-whisper-large
 ```
 
@@ -162,9 +178,10 @@ uv run python scripts/run_pipeline.py --input file.m4a --step transcribe --model
 ├── .venv/                  # Virtuelt miljø (håndteres av uv)
 ├── src/
 │   ├── analyze.py          # Steg 1: Metadata og analyse
-│   ├── preprocess.py       # Steg 2: Lydforberedelse
+│   ├── preprocess.py       # Steg 2: Adaptiv lydforberedelse
+│   ├── diarize.py          # Steg 3: Diarization (kjøres én gang)
 │   ├── transcribe.py       # Steg 3 & 4: Transkripsjon
-│   ├── compare.py          # Steg 5: Sammenligning og konsensus
+│   ├── compare.py          # Steg 5: Align og avviksmarkering
 │   └── editor.py           # Steg 6: Web-editor for sluttkorrektur
 ├── scripts/
 │   └── run_pipeline.py     # Hovedscript som orkestrerer alle steg
@@ -180,34 +197,38 @@ uv run python scripts/run_pipeline.py --input file.m4a --step transcribe --model
 
 1. **Konfidensbasert filtrering:** Lagre konfidens-score per ord/segment fra Whisper. Bruk dette til å markere usikre områder visuelt i editoren.
 
-2. **Tredje modell som tie-breaker:** Ved uenighet mellom fase 1 og 2, kjør en tredje modell (f.eks. `NbAiLab/nb-whisper-large`) og bruk majoritetsstemme.
+2. **Andre mening fremfor «tie-breaker»:** En tredje modell løser sjelden uenighet automatisk, fordi konfidens-score ikke er kalibrert og modeller feiler korrelert. Bruk heller den ekstra modellen til å flagge avvik for menneskelig review (Steg 5).
 
-3. **Word-level timestamps:** Aktiver `--word_timestamps True` i Whisper for mer presis synkronisering i editoren.
+3. **Word-level timestamps:** Hold `word_timestamps=True` på som default — editoren trenger det for presis synkronisering.
 
-4. **Automatisk stavekontroll:** Kjør norsk stavekontroll (f.eks. via `symspellpy` eller `transformers`-basert modell) på transkripsjonen før sluttkorrektur for å fange åpenbare feil.
+4. **Automatisk stavekontroll:** Kjør norsk stavekontroll (f.eks. via `symspellpy` eller en `transformers`-basert modell) på transkripsjonen før sluttkorrektur for å fange åpenbare feil.
 
-5. **Web-basert editor:** Bytt ut ekstern SRT-editor med en innebygget web-editor (f.eks. React + wavesurfer.js) som viser bølgeform, speaker-farger og konfidens-markeringer direkte i nettleseren.
+5. **Egendefinert ordliste:** Mat kjente egennavn og fagord inn via Whisper sin `initial_prompt` for å redusere feil på akkurat de ordene som ellers bommer.
 
-6. **Konfigurasjonsfil:** Flytt alle innstillinger (modellnavn, thresholds, filterparametre) til `config.yaml` slik at pipeline-en er reproduserbar og enkel å justere.
+6. **Web-basert editor:** Bytt ut ekstern SRT-editor med en innebygget web-editor (f.eks. React + wavesurfer.js) som viser bølgeform, speaker-farger og konfidens-/avviksmarkeringer direkte i nettleseren.
 
-7. **Logging og sporbarhet:** Logg alle kjøringer med parametre, modellversjoner og resultater til en SQLite-database eller JSON-lines-fil. Dette gjør det mulig å sammenligne resultater over tid.
+7. **Konfigurasjonsfil:** Flytt alle innstillinger (modellnavn, thresholds, filterparametre) til `config.yaml` slik at pipeline-en er reproduserbar og enkel å justere.
 
-8. **GPU-støtte (valgfritt):** På maskiner med NVIDIA GPU kan `faster-whisper` kjøres med `device="cuda"` og `compute_type="float16"` for betydelig hastighetsøkning. På Apple Silicon brukes fortsatt `device="cpu"` med `int8`.
+8. **Logging og sporbarhet:** Logg alle kjøringer med parametre, modellversjoner og resultater til en SQLite-database eller JSON-lines-fil. Dette gjør det mulig å sammenligne resultater over tid.
 
-9. **Parallellprosessering:** For batch-kjøringer, bruk `multiprocessing` eller `concurrent.futures` for å transkribere flere filer samtidig (begrenset av RAM og CPU-kjerner).
+9. **Maskinvareakselerasjon (Apple Silicon):** `faster-whisper` kjører kun på CPU på Mac og bruker verken GPU eller Neural Engine. For betydelig hastighetsøkning kan NB-Whisper konverteres til whisper.cpp (CoreML) eller MLX, som utnytter ANE/Metal. På maskiner med NVIDIA GPU brukes `device="cuda"` med `compute_type="float16"`.
 
-10. **VAD-forhåndsfilter:** Bruk `silero-vad` eller innebygd WhisperX-VAD for å fjerne lange stillhetssegmenter før transkripsjon. Dette sparer tid og reduserer hallucinering.
+10. **VAD-forhåndsfilter:** Bruk `silero-vad` eller innebygd WhisperX-VAD for å fjerne lange stillhetssegmenter før transkripsjon. Dette sparer tid og reduserer hallusinering.
 
 ---
 
 ## Ytelse
 
 - **Første kjøring:** Modellen lastes ned (~3 GB) til `~/.cache/huggingface/`
-- **Påfølgende kjøringer:** På M1 Max kan du regne med ca. **5–10× sanntid** (10 minutter lyd ⇒ 1–2 minutter transkripsjon)
+- **Påfølgende kjøringer (faster-whisper, CPU, int8):** På M1 Max er realistisk hastighet ca. **1–3× sanntid** for large-modellen — `faster-whisper` bruker ikke GPU/ANE på Mac
+- **Med CoreML/MLX (krever egen konvertering):** ca. **3–10× sanntid** ved å utnytte ANE/Metal
 - **Speaker-diarization:** Legger typisk til 20–40 % ekstra tid
+- **Batch:** large-modellen er minnetung — hold `--workers` på 2–4 på 32 GB RAM for å unngå swapping
 
 ---
 
 ## Lisens
 
 MIT
+
+> Ved bruk av NB-Whisper i Norge oppfordrer Nasjonalbiblioteket til å merke output med «Transkribert med NB-Whisper Large», bl.a. for å unngå at framtidige ASR-modeller trenes på maskingenerert tekst.
