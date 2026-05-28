@@ -147,6 +147,51 @@ dependencies = [
 
 1. Lag bruker på [huggingface.co](https://huggingface.co)
 2. Godkjenn vilkårene for:
+## Oppsett
+
+**Forutsetninger:** Homebrew, Python 3.11+, ffmpeg, og `uv` må være installert.
+
+### 0. Installer uv (Python package manager)
+
+`uv` er en superrask Python package manager skrevet i Rust. Den erstatter `pip` + `venv`:
+
+```bash
+# On macOS with Homebrew
+brew install uv
+
+# Verify installation
+uv --version
+```
+
+### 1. Sett opp prosjektmappe og miljø med uv
+
+```bash
+git clone https://github.com/egkristi/Audio-Transcriber.git ~/Audio-Transcriber
+cd ~/Audio-Transcriber
+uv sync
+```
+
+**Det er alt!** `uv sync` gjør automatisk:
+- ✅ Oppretter isolert virtuelt miljø
+- ✅ Installes alle avhengigheter fra `pyproject.toml`
+- ✅ Låser versjoner i `uv.lock` for reproduserbarhet
+
+Du trenger IKKE:
+- ❌ Manuelt aktivere `venv`
+- ❌ Kjøre `pip install` kommandoer
+- ❌ Bekymre deg for versjonskonflikter
+
+Bruk `uv run` for å kjøre kommandoer:
+
+```bash
+uv run python scripts/run_pipeline.py --help
+uv run pytest tests/  # Hvis du legger til tests
+```
+
+### 2. Hugging Face-token (for speaker-diarization)
+
+1. Lag bruker på [huggingface.co](https://huggingface.co)
+2. Godkjenn vilkårene for:
    - [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1)
    - [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0)
 3. Generer token: **Settings → Access Tokens → New token (Read)**
