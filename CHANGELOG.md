@@ -56,6 +56,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Comprehensive CLI interface
   - JSON logging with file output
   - Pipeline summary reporting
+- **Database Module** (`src/database.py`):
+  - SQLite-based transcription job tracking
+  - Performance metrics recording (per-stage timing)
+  - Correction history and analysis
+  - Job statistics and summaries
+  - JSON export for results
+- **Spell-Checking Module** (`src/spell_check.py`):
+  - Norwegian spell-checking with SymSpell integration
+  - Number transcription error detection
+  - Proper noun identification
+  - Transformer-based model support (placeholder)
+  - Configurable spell-checking pipeline
+- **Vocabulary Module** (`src/vocabulary.py`):
+  - Custom vocabulary loading from JSON
+  - Initial prompt generation for Whisper vocabulary injection
+  - Domain-specific vocabulary (medical, legal, technical, finance)
+  - Common Norwegian proper nouns database
+  - Similarity-based correction suggestions
 - Utility modules (`src/utils.py`, `src/config.py`):
   - JSON and text logging formatters
   - Configuration management with YAML support

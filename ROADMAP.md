@@ -24,10 +24,13 @@
 - [x] Add worker pool for parallel processing
 
 ### Phase 4: Configuration & Utilities
-- [ ] Create `utils.py` (Helper functions, logging, error handling)
-- [ ] Create `config.py` (Configuration loading and validation)
-- [ ] Setup logging system
-- [ ] Add VAD (Voice Activity Detection) integration
+- [x] Create `utils.py` (Helper functions, logging, error handling)
+- [x] Create `config.py` (Configuration loading and validation)
+- [x] Setup logging system
+- [x] Add database module (`database.py`) for tracking and logging
+- [x] Add spell-checking module (`spell_check.py`) for Norwegian text
+- [x] Add vocabulary module (`vocabulary.py`) for custom words and initial prompts
+- [ ] Add VAD (Voice Activity Detection) optimization
 
 ### Phase 5: Features & Enhancements
 - [ ] Word-level confidence filtering

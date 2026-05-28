@@ -1,0 +1,72 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual environments
+.venv
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Project specific
+output/
+logs/
+*.log
+*.db
+.env
+transcriptions.db
+
+# Audio files (optional - uncomment if needed)
+# *.m4a
+# *.mp3
+# *.wav
+# *.flac
+
+# Cache
+.cache/
+*.cache
+*.pkl
+*.pickle
+
+# Model cache (Hugging Face)
+.cache/huggingface/
+models/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Lock files (if using uv)
+uv.lock
