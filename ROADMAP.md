@@ -64,22 +64,24 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 
 ## Key audit findings to address next
 
+> Se `ISSUES.md` for fullstendig og oppdatert status på alle problemer. Denne seksjonen er et sammendrag.
+
 ### Resolved (2026-05-28)
-- ✅ `transcribe.py` now passes `beam_size`, `vad_filter`, `condition_on_previous_text`, and `initial_prompt` into WhisperX.
-- ✅ `analyze.py` language detection now uses `whisperx` instead of standalone `whisper`.
-- ✅ `diarize.py` has `check_hf_auth()` with graceful error messages.
-- ✅ `database.py`, `spell_check.py`, and `vocabulary.py` are wired into pipeline via CLI flags.
-- ✅ Unit tests added for `analyze.py`, `preprocess.py`, `compare.py`, and `diarize.py` (31 tests passing).
+- ✅ Issue #1 — konfig-parametre koblet til WhisperX
+- ✅ Issue #2 — språkdeteksjon via `faster_whisper` (cachet, 30s-klipp)
+- ✅ Issue #3 — HF-auth-helper
+- ✅ Issue #6 — database/spell/vocab wiret inn i pipeline
+- ✅ Issue #10/#13 — device auto-detection (CTranslate2=cuda, PyTorch=cuda/mps)
+- ✅ Issue #12 — modell-caching for språkdeteksjon
 
 ### Remaining
-- `config.yaml` `segmentation_model` is ignored by `diarize.py`.
-- `preprocess.py` collapses stereo audio into mono; real-channel separation is not handled optimally.
-- `ThreadPoolExecutor` in batch mode does not provide true parallelism for CPU-bound tasks due to Python GIL.
-- `analyze.py` loads a full `whisperx` tiny model (~39 MB) just for language detection.
-- `device="cpu"` and `compute_type="int8"` are hardcoded in `transcribe.py` and `diarize.py`.
-- `compare.py` alignment is simplistic (time overlap + SequenceMatcher), not word-level WER.
-- `editor.py` remains a placeholder (SRT export only, no web UI).
-- No CI pipeline or integration tests.
+- **#4:** `segmentation_model` ignoreres i `diarize.py`
+- **#5:** Stereo håndteres ikke optimalt — verifiser på faktiske filer først
+- **#11:** `ThreadPoolExecutor` gir ikke ekte parallellisme for CPU-tunge oppgaver
+- **#14:** `confidence.py` er designet og testet, men ikke wiret inn i pipeline
+- **#8:** `editor.py` er fortsatt placeholder
+- **#9:** `compare.py` bruker enkel tids-overlap-alignment
+- Ingen CI-pipeline
 
 ## Near-term priorities (revidert etter REVIEW.md)
 

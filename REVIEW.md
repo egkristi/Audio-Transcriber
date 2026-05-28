@@ -1,103 +1,109 @@
 # Strategisk gjennomgang av Audio-Transcriber
 
-**Dato:** 28 May 2026  
-**Kilde:** Ekstern AI-gjennomgang (Claude) basert på audit av repoet
+**Dato:** 28. mai 2026  
+**Kontekst:** Oppfølging etter v0.1.1–v0.1.3. Det meste fra forrige runde er adressert; dette dokumentet handler om hva som faktisk gjenstår og hva som bør gjøres nå.
 
 ---
 
-## Hovedfunn: Prosjektet har drevet fra «transkriber opptakene mine nøyaktig» mot «bygg en transkripsjonsplattform»
+## Hovedfunn: Du har bygget målestokken, men ikke målt
 
-Mange av elementene i Phase 5–7 (web-editor, REST API, Docker, flere språk, fine-tuning) er plattformbygging du sannsynligvis aldri trenger for å transkribere dine egne opptak godt. Den røde tråden må være: **mål først, fiks den døde konfigurasjonen, injiser vocabulary — så vurder resten mot tall i stedet for magefølelse.**
+Forrige gjennomgang sa: *mål først.* Du har bygget `scripts/evaluate.py` (WER/CER med `jiwer`) — det er målestokken. Men ingenting i repoet tyder på at du faktisk har:
 
----
+1. Laget en **fasit** (manuelt transkribert 5–10 min av dine *ekte* opptak), eller
+2. **Kjørt pipelinen på et reelt opptak** og sett på resultatet.
 
-## 1. Du måler ikke nøyaktighet — det er det største hullet
+Roadmap krysser av «Ground-truth + WER-harness ✅», men en harness uten fasit måler ingenting. Å bygge målestokken er ikke det samme som å måle.
 
-Hele premisset var «så nær 100 % som mulig», men det finnes ingen måte i repoet å vite hvor nær du er. Uten en fasit er ROADMAP-en ren gjetning — «bedre alignment», «stavekontroll», «andre modell» er alle uverifiserbare påstander.
+**Dette er nå den eneste tingen som betyr noe.** Alt annet — confidence-flagging, stereo-håndtering, knott-tuning — er uverifiserbart inntil du har kjørt loopen én gang på virkelige data. Du har bygget bredt og kompetent, men prosjektet har fortsatt ikke møtt virkeligheten.
 
-**Dette bør være oppgave #1, før alt annet:**
-
-1. Transkriber 5–10 minutter av dine *faktiske* opptak manuelt og perfekt → en liten ground-truth-fasit.
-2. Regn WER (Word Error Rate) mot pipeline-output med `jiwer`.
-3. Nå er hver eneste endring målbar: du ser svart på hvitt om verbatim-modellen slår main, om `initial_prompt` hjelper, om den andre modellen i Steg 4 i det hele tatt bidrar.
-
-**Status:** Ikke påbegynt. Står ikke i roadmap i det hele tatt.
+> **Konkret, denne uken:** Ta ett ekte opptak. Transkriber 5–10 min av det manuelt og perfekt. Kjør full pipeline på samme opptak. Kjør `evaluate.py`. Se på *hvor* og *hvordan* den feiler. Den ene øvelsen vil omrokere hele resten av roadmapen basert på tall i stedet for antakelser.
 
 ---
 
-## 2. Konfig-knottene er koblet fra (Issue #1) — fiks før du måler
+## Dokumentasjonen har drevet ut av synk
 
-`beam_size`, `word_timestamps`, `condition_on_previous_text` og `initial_prompt` blir tatt imot men aldri sendt til WhisperX. Det betyr at alt du justerer i `config.yaml` i dag ikke har effekt. Dette må fikses *før* ground-truth-målingen, ellers måler du en pipeline der knottene er døde.
+Etter de raske commitene motsier filene nå hverandre. Dette er et reelt problem, fordi dokumentene er kilden til prioritering — er de utdaterte, blir arbeid re-gjort eller feilprioritert.
 
-**Advarsel:** `condition_on_previous_text=True` gir mer sammenheng, men på samtaleopptak med kryssprat kan en dårlig segment forgifte de neste (hallusinering forplanter seg). Test begge veier mot fasiten — ikke sett-og-glem.
-
-**Status:** Løst i commit `155513b`.
+**Anbefaling:** Gjør `ISSUES.md` til eneste sannhetskilde for status. La `README.md` og `ROADMAP.md` *lenke* til den i stedet for å duplisere «Gjenstående»/«Begrensninger» i flere seksjoner som så råtner.
 
 ---
 
-## 3. Språkdeteksjon: Bedre fiks enn å bytte til `whisperx`
+## Tier 1 — Lukk nøyaktighetsloopen (før mer kode)
 
-`analyze.py` brukte `whisper` (OpenAI), mens `pyproject.toml` kun hadde `whisperx`. Fiksen i commit `155513b` byttet til `whisperx.load_model("tiny")`, men dette laster fortsatt en hel ~39 MB-modell kun for språkdeteksjon.
-
-**Bedre fiks:** `faster-whisper` (som WhisperX bygger på) returnerer allerede `info.language` og `info.language_probability` fra `transcribe()`. Bruk den til språkdeteksjon og **fjern `whisper`-importen helt** — da forsvinner avhengighetsgapet i stedet for å vokse.
-
-**Status:** Delvis løst, men kan forbedres.
-
----
-
-## 4. Issue #10 (device auto-detection) vil krasje slik den er beskrevet
-
-«Auto-detect `mps`/`cuda`» fungerer ikke for transkripsjonen. CTranslate2 (motoren under faster-whisper og WhisperX) **støtter ikke Apple Metal/MPS** — `device="mps"` gir bokstavelig talt `ValueError: unsupported device mps`. På Mac har du bare `cpu`.
-
-**Reelle alternativer:**
-- **Behold CPU.** For et personlig verktøy med en håndfull opptak er 1–3× sanntid helt greit. Ikke invester i akselerasjon før volumet faktisk plager deg.
-- **Bytt motor** for transkripsjonssteget til whisper.cpp+CoreML eller MLX hvis du vil ha ~10× — men det er en egen motor, ikke et device-flagg, og NB-Whisper må konverteres dit.
-- **pyannote** (diarization) *kan* bruke `mps`, siden det er PyTorch. Så `mps`-deteksjon hører hjemme i `diarize.py`, ikke `transcribe.py`.
-
-**Status:** Må revideres i ISSUES.md og ROADMAP.md.
+| Oppgave | Hvorfor |
+|---------|---------|
+| Lag fasit på ekte opptak | Eneste umålte forutsetning. Uten den er resten gjetning. |
+| Kjør full pipeline på samme opptak + `evaluate.py` | Gir første reelle WER-tall. |
+| Inspiser feilmodusene | Avgjør om problemet er navn, tall, kryssprat, dialekt eller noe helt annet — det styrer alt videre. |
 
 ---
 
-## 5. Issue #5 (stereo) — verifiser før du bygger
+## Tier 2 — `confidence.py` (#14): fullfør, men *valider* den
 
-Samsung sine samtaleopptak er som regel **mono** (mikset kanal), ikke ekte stereo med én part per kanal. Kjør `analyze.py` på de faktiske filene dine og sjekk `has_stereo_separation` *før* du bygger kanal-splitting. Hvis de er mono, er #5 bortkastet arbeid. Du har allerede verktøyet til å avgjøre dette — bruk det.
+Designet er ferdig og stubben finnes. Dette er riktig neste kodeoppgave, fordi den treffer review-prioriteringsmålet direkte. To ting er kritiske når du wirer den inn:
 
-**Status:** Åpen, men bør verifiseres på faktiske filer først.
+### 2a. Valider at prioriteringen faktisk korrelerer med feil
 
----
+En prioriteringsrangering som ikke er bedre enn tilfeldig er verre enn ingenting — den gir falsk trygghet. Med fasiten kan du måle det:
 
-## 6. Vocabulary via `initial_prompt` (Issue #6) — høyest ROI
+- Regn per-segment WER mot fasit.
+- Mål **rangkorrelasjon** (Spearman) mellom priority-score og segment-WER, eller **precision@k**: av de k høyest flaggede segmentene, hvor mange inneholder faktisk feil?
+- Hvis korrelasjonen er svak, er signal-miksen feil — juster før du stoler på den.
 
-Dette er den høyeste ROI-en for nøyaktighet på *dine* opptak: mat inn kjente egennavn, stedsnavn og fagord. `vocabulary.py` finnes allerede; den henger bare på at #1 fikses først.
+Dette er suksesskriteriet som binder #14 til harnessen. Uten det er confidence-flagging bare en udokumentert magefølelse-vekt.
 
-**Status:** Integrert i commit `155513b` via `--vocabulary-file`.
+### 2b. «Skråsikkert feil»-gapet trenger en *regel*, ikke bare en advarsel
 
----
+ISSUES #14 noterer ærlig at confidence bommer på plausible substitusjoner av navn og tall. Men en advarsel i dokumentasjonen fanger ingen feil. Legg inn deterministiske **hard-regler** som flagger uansett score:
 
-## Anbefalt rekkefølge fremover
+- Segmenter som inneholder **tall/siffer** → alltid flagg.
+- Segmenter med **stor forbokstav-tokens utenfor vokabularet** (sannsynlige egennavn) → alltid flagg.
 
-1. **Ground-truth + WER-harness** (`jiwer`). Forutsetning for alt annet.
-2. **Issue #1** — koble konfig-parametrene til WhisperX-kallet. ✅ Løst.
-3. **Issue #2 (forbedret fiks)** — bruk `faster-whisper` sin innebygde språkdeteksjon i stedet for å laste en hel modell.
-4. **Issue #6 (vocabulary via `initial_prompt`)** — høyest ROI for nøyaktighet. ✅ Integrert.
-5. **Issue #3** — HF-auth-helper. ✅ Løst.
-6. **Mål, mål, mål** — kjør WER mot fasiten for hver endring.
+Dette treffer nøyaktig feiltypen confidence-scoren ikke kan se.
 
----
+### 2c. Kjent WhisperX-svakhet som rammer akkurat tallene
 
-## Drop eller utsett (over-scope for et personlig verktøy)
-
-| Element | Anbefaling | Begrunnelse |
-|---------|-----------|-------------|
-| **Web-editor (#8)** | Utsett | Subtitle Edit gjør allerede dette bra og gratis. FastAPI + wavesurfer.js er mye arbeid for marginal gevinst. |
-| **DTW-alignment i `compare.py` (#9)** | Utsett | `jiwer` gir ord-nivå diff billig. Ground-truth-harnessen vil fortelle deg om to-modell-sammenligningen i det hele tatt hjelper. |
-| **`spell_check.py` autokorrektur** | Unngå | Norsk stavekontroll på Whisper-output kan «rette» korrekte egennavn til feil vanlige ord. Bruk kun til å *flagge*. Prioriter `initial_prompt` (forhindrer feil oppstrøms). |
-| **REST API, Docker, svensk/dansk/finsk** | Riktig parkert som «future» | Ikke rør før kjernen leverer. |
-| **Full test-suite + CI (Phase 7)** | Delvis | Noen få målrettede tester rundt `compare.py` og konfig-gjennomføringen er verdt det; full CI er overinvestering for et personlig verktøy. |
-| **Apple Silicon akselerasjon (#10)** | Utsett / behold CPU | CTranslate2 støtter ikke MPS. whisper.cpp+CoreML krever egen konvertering. 1–3× sanntid på CPU er greit for et personlig verktøy. |
+WhisperX gir som standard **ikke** ord-nivå timestamps/score for tokens som kun er tall (f.eks. «1,5» eller «2024») — alignment-modellen er fonem-basert. Det betyr at det akustiske «lyd-mot-tekst»-signalet ditt er svakest nettopp der feilene er farligst (tall). Praktisk konsekvens: **ikke stol på alignment-score for numeriske tokens — flagg dem med regel i stedet** (samme som 2b). Verifiser oppførselen på dine faktiske data.
 
 ---
 
-## Oppsummert
+## Tier 2b — Tun knottene mot fasiten (mest config, lite kode)
 
-Den røde tråden: **mål først, fiks den døde konfigurasjonen, injiser vocabulary — så vurder resten mot tall i stedet for magefølelse.** Det meste i Phase 5–7 er plattformbygging du sannsynligvis aldri trenger for å transkribere dine egne opptak godt.
+Når fasiten finnes, er disse plutselig målbare i stedet for teoretiske. Kjør WER for hver:
+
+- **Verbatim vs. main** — hvilken gir lavest WER på *dine* opptak?
+- **`condition_on_previous_text` på/av** — på kryssprat kan «på» forplante hallusinering. Mål det.
+- **Vocabulary på/av** — bekreft at `initial_prompt` faktisk senker WER (forventet høy ROI, men verifiser).
+- **Andre modell (Steg 4) på/av** — hvis én god modell + vocabulary allerede gir lav WER, dropp den andre modellen helt.
+- **`--spell-check` på/av** — *dette kan gjøre WER verre.* Norsk stavekontroll kan «rette» korrekte egennavn til feil vanlige ord. Nå som den er wiret inn, mål effekten — ikke anta at den hjelper.
+
+> **Interaksjon å være obs på:** verbatim-modellen er små-bokstavert uten tegnsetting. Injiserer du vocabulary med stor forbokstav via `initial_prompt`, kan effekten bli mindre enn ventet, og outputen får uansett ikke kapitaliseringen. Test kombinasjonen.
+
+---
+
+## Tier 3 — Reelle bugs som påvirker korrekthet/bruk
+
+- **#11 (ThreadPoolExecutor + GIL):** Reell bug — tråder parallelliserer ikke CPU-bundet inferens. Men ikke bygg elaborate `ProcessPoolExecutor`-maskineri: hver prosess laster sin egen modellkopi (NB-Whisper int8 ~1,5–3 GB + alignment + pyannote), så på 32 GB får du uansett bare plass til 2–3 samtidig. **Enkleste korrekte fiks:** sett default `--workers 1`, og dokumenter at høyere kun gir mening på CUDA med nok minne. For en håndfull personlige opptak er sekvensiell kjøring helt greit.
+- **#4 (`segmentation_model` ignoreres):** pyannote 3.1-pipelinen bundler egen segmentering; å overstyre den er ikke nødvendigvis støttet rent. Lavt prioritert — enten wire det eller **dokumenter at feltet ikke er konfigurerbart** og fjern det fra `config.yaml` så det ikke villeder.
+
+---
+
+## Tier 4 — Verifiser før du bygger
+
+- **#5 (stereo):** Fortsatt ikke verifisert. Kjør `analyze.py` på de faktiske filene og sjekk `has_stereo_separation`. Samsung-opptak er typisk mono — er de det, lukk #5 uten å skrive en linje kode.
+
+---
+
+## Tier 5 — Korrekt utsatt (ingen endring)
+
+Web-editor (#8), DTW-alignment (#9), Apple Silicon-akselerasjon utover CPU (#10), full CI (Phase 7), REST API / Docker / flerspråk. Alt riktig parkert. Ikke rør før kjernen leverer målt lav WER.
+
+---
+
+## Hvis du bare gjør tre ting
+
+1. **Lag fasit + kjør pipelinen på ett ekte opptak + mål WER.** Alt annet venter på dette.
+2. **Fullfør `confidence.py` med valideringsmetrikk (Spearman/precision@k) + hard-regler for tall og egennavn.**
+3. **Reconciler dokumentasjonen** til én sannhetskilde (`ISSUES.md`), og lukk #12.
+
+Den røde tråden er den samme som sist, bare skarpere nå: du har sluttet å mangle verktøy og begynt å mangle *data*. Mål på ekte opptak, så lar du tallene bestemme resten.

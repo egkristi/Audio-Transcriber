@@ -65,19 +65,20 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 
 ### #12: `analyze.py` loads full whisperx model just for language detection
 - **File:** `src/analyze.py`
-- **Status:** Open
-- **Description:** `detect_language()` loads `whisperx.load_model("tiny")` (~39 MB) for every audio file. This is wasteful for a metadata extraction step.
-- **Impact:** Slows down Step 1 significantly; redundant model loading.
-- **Fix:** Cache the tiny model across calls, or use a lighter language detection method (e.g., `faster-whisper` decoder-only detection, or `langdetect` on a short audio clip).
+- **Status:** Resolved (2026-05-28) — v0.1.2
+- **Description:** `detect_language()` loaded `whisperx.load_model("tiny")` (~39 MB) for every audio file. This was wasteful for a metadata extraction step.
+- **Fix:** Reimplemented using `faster_whisper.WhisperModel("tiny")` with module-level cache (`_language_model`) so the model is loaded once and reused. Processes only the first 30 seconds of audio for speed. No standalone `whisper` dependency needed.
 
-### #13: Hardcoded `device="cpu"` and `compute_type="int8"` throughout
+### #13: Device auto-detection (replaces #10)
 - **File:** `src/transcribe.py`, `src/diarize.py`
-- **Status:** Resolved (2026-05-28) — partial
-- **Description:** Both modules hardcode CPU and int8 precision. No auto-detection of `mps` (Apple Silicon), `cuda` (NVIDIA), or config override.
-- **Impact:** Users with GPU or Apple Silicon get no hardware acceleration.
+- **Status:** Resolved (2026-05-28)
+- **Description:** Both modules previously hardcoded `device="cpu"` and `compute_type="int8"`. No auto-detection of `mps` (Apple Silicon), `cuda` (NVIDIA), or config override.
+- **Korreksjon:** CTranslate2 (motoren under faster-whisper/WhisperX) **støtter ikke Apple Metal/MPS** — `device="mps"` gir `ValueError: unsupported device mps`. På Mac er `cpu` eneste alternativ for transkripsjon.
+- **Impact:** Users with GPU or Apple Silicon get no hardware acceleration for transcription. Diarization (PyTorch) can use MPS.
 - **Fix:**
   - `transcribe.py`: auto-detects `cuda` only (CTranslate2 does not support MPS); falls back to `cpu`
   - `diarize.py`: auto-detects `cuda` and `mps` (PyTorch); falls back to `cpu`
+  - For betydelig hastighetsøkning på Mac: vurder whisper.cpp+CoreML eller MLX — men dette er en egen motor, ikke et device-flagg.
 
 ### #14: Confidence-flagging for review prioritization
 - **File:** `src/confidence.py` (new), `src/transcribe.py`, `src/compare.py`
@@ -109,15 +110,8 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 - **Fix:** Implement word-level alignment (e.g., using `jiwer` or a custom DTW-based approach) and compute actual WER between segments.
 
 ### #10: No Apple Silicon / GPU acceleration
-- **Status:** Open — men må revideres
-- **Description:** `device="cpu"` and `compute_type="int8"` are hardcoded in `transcribe.py` and `diarize.py`.
-- **Korreksjon:** CTranslate2 (motoren under faster-whisper/WhisperX) **støtter ikke Apple Metal/MPS** — `device="mps"` gir `ValueError: unsupported device mps`. På Mac er `cpu` eneste alternativ for transkripsjon.
-- **pyannote** (diarization) *kan* bruke `mps` siden det er PyTorch — dette kan detekteres i `diarize.py`.
-- **Impact:** Slow transcription on Macs. Machines with NVIDIA GPUs can use `cuda`.
-- **Fix:**
-  - `transcribe.py`: Auto-detect `cuda` only; keep `cpu` as fallback. Document at MPS ikke støttes.
-  - `diarize.py`: Auto-detect `cuda` og `mps`; keep `cpu` as fallback.
-  - For betydelig hastighetsøkning på Mac: vurder whisper.cpp+CoreML eller MLX — men dette er en egen motor, ikke et device-flagg.
+- **Status:** Resolved (2026-05-28) — merged into #13
+- **Description:** Overlapped with #13 (hardcoded device). CTranslate2 does not support MPS; see #13 for canonical status.
 
 ## Resolved
 

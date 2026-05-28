@@ -33,14 +33,15 @@ Denne repoen inneholder en fungerende proof-of-concept pipeline med de viktigste
 - ✅ `src/confidence.py` — konfidens-flagging med flere deterministiske signaler (alignment score, avg_logprob, no_speech_prob, compression_ratio, temperature, word probability, model disagreement, SNR). Prioriterer segmenter for manuell review.
 
 ### Gjenstående
-- `config.yaml` inneholder `segmentation_model`, men koden bruker ikke dette feltet i diarization-kallet.
-- Stereo-innhold behandles ved å slå sammen kanaler til mono. Dette kan redusere nøyaktigheten for ekte flere-høyttaler stereo-opptak.
-- `ThreadPoolExecutor` i batch-modus gir ikke ekte parallellisme for CPU-tunge oppgaver (transkripsjon, diarization) pga. Python GIL. Vurder `ProcessPoolExecutor` eller begrensning til én worker per GPU.
-- `analyze.py` laster en hel `whisperx` tiny-modell (~39 MB) kun for språkdeteksjon. Dette er tungvint for et metadatasteg. Vurder caching eller lettere deteksjon.
-- `device="cpu"` og `compute_type="int8"` er hardkodet i `transcribe.py` og `diarize.py`. Ingen auto-deteksjon av `mps` (Apple Silicon) eller `cuda`.
-- `compare.py` bruker fortsatt enkel tids-overlap-alignment (>50 %) og `SequenceMatcher`. Ingen ord-nivå WER-beregning.
-- `editor.py` er fortsatt kun en SRT-eksportfunksjon, ikke en ekte web-editor.
-- Ingen CI-pipeline (GitHub Actions) eller integrasjonstester enda.
+Se `ISSUES.md` for fullstendig og oppdatert liste over åpne og løste problemer. Nedenfor er et sammendrag:
+
+- **#4:** `config.yaml` inneholder `segmentation_model`, men koden bruker ikke dette feltet.
+- **#5:** Stereo-innhold behandles ved å slå sammen kanaler til mono — verifiser på faktiske filer først.
+- **#11:** `ThreadPoolExecutor` i batch-modus gir ikke ekte parallellisme for CPU-tunge oppgaver pga. Python GIL.
+- **#14:** `src/confidence.py` er designet og testet, men ikke wiret inn i pipeline.
+- **#8:** `editor.py` er fortsatt kun en SRT-eksportfunksjon, ikke en ekte web-editor.
+- **#9:** `compare.py` bruker fortsatt enkel tids-overlap-alignment og `SequenceMatcher`.
+- Ingen CI-pipeline (GitHub Actions) eller integrasjonstester.
 
 ## Rask installasjon
 
@@ -110,17 +111,6 @@ Viktige seksjoner:
 - `comparison` — avtalenivå og flagglogikk
 - `output` — format og eksportinnstillinger
 - `performance` — enheter og compute type
-
-## Nåværende kjente begrensninger
-
-- `editor.py` er kun en SRT-funksjon og ikke et ekte web-UI
-- `config.yaml` inneholder `segmentation_model`, men koden bruker ikke dette feltet
-- Ekte stereo med én taler per kanal håndteres ikke optimalt (kanaler slås sammen til mono)
-- `ThreadPoolExecutor` i batch-modus gir ikke ekte parallellisme for CPU-tunge oppgaver pga. Python GIL
-- `analyze.py` laster en hel `whisperx` tiny-modell (~39 MB) kun for språkdeteksjon
-- `device="cpu"` og `compute_type="int8"` er hardkodet — ingen auto-deteksjon av `mps` eller `cuda`
-- `compare.py` bruker fortsatt enkel tids-overlap-alignment og `SequenceMatcher`, ikke ord-nivå WER
-- Ingen CI-pipeline (GitHub Actions) eller integrasjonstester enda
 
 ## Filstruktur
 
