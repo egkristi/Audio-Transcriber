@@ -10,18 +10,18 @@
 
 ### Phase 2: Core Modules
 - [x] Implement `analyze.py` (Step 1: Audio analysis and metadata)
-- [ ] Implement `preprocess.py` (Step 2: Adaptive audio preprocessing)
-- [ ] Implement `diarize.py` (Step 3: Speaker diarization)
-- [ ] Implement `transcribe.py` (Steps 3 & 4: Whisper transcription)
-- [ ] Implement `compare.py` (Step 5: Model comparison and deviation marking)
-- [ ] Implement `editor.py` (Step 6: Web-based audio editor)
+- [x] Implement `preprocess.py` (Step 2: Adaptive audio preprocessing)
+- [x] Implement `diarize.py` (Step 3: Speaker diarization)
+- [x] Implement `transcribe.py` (Steps 3 & 4: Whisper transcription)
+- [x] Implement `compare.py` (Step 5: Model comparison and deviation marking)
+- [x] Implement `editor.py` (Step 6: Web-based audio editor)
 
 ### Phase 3: Orchestration & CLI
-- [ ] Implement `run_pipeline.py` (Main orchestration script)
-- [ ] Add CLI argument parsing (--input, --output-dir, --step, --workers, etc.)
-- [ ] Add batch processing support
-- [ ] Add single-file processing support
-- [ ] Add worker pool for parallel processing
+- [x] Implement `run_pipeline.py` (Main orchestration script)
+- [x] Add CLI argument parsing (--input, --output-dir, --step, --workers, etc.)
+- [x] Add batch processing support
+- [x] Add single-file processing support
+- [x] Add worker pool for parallel processing
 
 ### Phase 4: Configuration & Utilities
 - [ ] Create `utils.py` (Helper functions, logging, error handling)

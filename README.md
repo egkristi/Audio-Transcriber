@@ -4,6 +4,36 @@ Et verktøy for å transkribere lydfiler til tekst med høy nøyaktighet. System
 
 ---
 
+## Status: Pipeline Fully Implemented ✓
+
+The complete 6-stage pipeline has been implemented and is ready for testing:
+
+- ✅ **Step 1 - Analyze**: Audio metadata extraction with VAD, language detection, bandwidth detection
+- ✅ **Step 2 - Preprocess**: Adaptive audio conditioning with filtering, resampling, loudness normalization  
+- ✅ **Step 3 - Diarize**: Speaker diarization using PyAnnote
+- ✅ **Steps 3 & 4 - Transcribe**: Multi-model transcription with SRT/JSON/VTT output
+- ✅ **Step 5 - Compare**: Multi-model comparison with deviation marking
+- ✅ **Step 6 - Editor**: Export for manual review in external editors
+- ✅ **Orchestration**: Full CLI with batch processing and worker pools
+
+### Quick Start
+
+```bash
+# Single file with all steps
+uv run python scripts/run_pipeline.py \
+  --input recording.m4a \
+  --output-dir ./output \
+  --diarize --compare-models
+
+# Batch process folder with 4 parallel workers  
+uv run python scripts/run_pipeline.py \
+  --input ./recordings \
+  --output-dir ./output \
+  --workers 4
+```
+
+---
+
 ## Pipeline (6 steg per lydfil)
 
 For hver lydfil følges stegene nedenfor. De kan kjøres enkeltvis, i batch, eller på hele mapper.
@@ -163,10 +193,10 @@ uv run python scripts/run_pipeline.py --input file.m4a --step preprocess
 uv run python scripts/run_pipeline.py --input file.m4a --step diarize
 
 # Kun transkripsjon (ordrett verbatim-modell)
-uv run python scripts/run_pipeline.py --input file.m4a --step transcribe --model nb-whisper-large-verbatim
+uv run python scripts/run_pipeline.py --input file.m4a --step transcribe --primary-model NbAiLab/nb-whisper-large-verbatim
 
 # Kun transkripsjon (lesbar main-modell)
-uv run python scripts/run_pipeline.py --input file.m4a --step transcribe --model nb-whisper-large
+uv run python scripts/run_pipeline.py --input file.m4a --step transcribe --primary-model NbAiLab/nb-whisper-large
 ```
 
 ---
