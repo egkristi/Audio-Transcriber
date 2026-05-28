@@ -29,9 +29,9 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 - [x] `src/utils.py` — logging, file helpers, JSON utilities
 - [x] `src/config.py` — YAML configuration loader
 - [x] Logging setup with console/file handlers
-- [~] `src/database.py` implemented but not integrated into pipeline
-- [~] `src/spell_check.py` prototype exists but not integrated
-- [~] `src/vocabulary.py` prototype exists but not integrated
+- [x] `src/database.py` integrated into pipeline via `--use-database`
+- [x] `src/spell_check.py` integrated into pipeline via `--spell-check`
+- [x] `src/vocabulary.py` integrated into pipeline via `--vocabulary-file`
 - [ ] VAD configuration and actual model selection should be hardened
 
 ### Phase 5: Feature gap closing
@@ -59,20 +59,31 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 
 ## Key audit findings to address next
 
-- `transcribe.py` ignores several transcription config parameters in current WhisperX invocation.
-- `analyze.py` language detection depends on `whisper` while `pyproject.toml` lists only `whisperx`.
-- `diarize.py` requires Hugging Face auth token and does not use `segmentation_model` from config.
+### Resolved (2026-05-28)
+- ✅ `transcribe.py` now passes `beam_size`, `vad_filter`, `condition_on_previous_text`, and `initial_prompt` into WhisperX.
+- ✅ `analyze.py` language detection now uses `whisperx` instead of standalone `whisper`.
+- ✅ `diarize.py` has `check_hf_auth()` with graceful error messages.
+- ✅ `database.py`, `spell_check.py`, and `vocabulary.py` are wired into pipeline via CLI flags.
+- ✅ Unit tests added for `analyze.py`, `preprocess.py`, `compare.py`, and `diarize.py` (31 tests passing).
+
+### Remaining
+- `config.yaml` `segmentation_model` is ignored by `diarize.py`.
 - `preprocess.py` collapses stereo audio into mono; real-channel separation is not handled optimally.
-- `database.py`, `spell_check.py`, and `vocabulary.py` are present as modules but are not wired into the pipeline.
-- There is no test coverage or CI yet.
+- `ThreadPoolExecutor` in batch mode does not provide true parallelism for CPU-bound tasks due to Python GIL.
+- `analyze.py` loads a full `whisperx` tiny model (~39 MB) just for language detection.
+- `device="cpu"` and `compute_type="int8"` are hardcoded in `transcribe.py` and `diarize.py`.
+- `compare.py` alignment is simplistic (time overlap + SequenceMatcher), not word-level WER.
+- `editor.py` remains a placeholder (SRT export only, no web UI).
+- No CI pipeline or integration tests.
 
 ## Near-term priorities
 
-1. Fix transcription config usage in `src/transcribe.py`
-2. Make `src/analyze.py` language detection resilient without requiring `whisper` as a separate dependency
-3. Add Hugging Face token handling and validate pyannote auth flow
-4. Integrate `database.py` for job/log tracking and `spell_check.py` for optional review support
-5. Add unit tests for `analyze.py`, `preprocess.py`, `diarize.py`, and `compare.py`
+1. Add device auto-detection (`mps` / `cuda`) in `transcribe.py` and `diarize.py`
+2. Implement proper stereo channel separation in `preprocess.py`
+3. Replace `ThreadPoolExecutor` with `ProcessPoolExecutor` or document single-worker recommendation
+4. Add lightweight language detection in `analyze.py` (avoid loading full whisperx model)
+5. Improve `compare.py` alignment with word-level WER using `jiwer`
+6. Add GitHub Actions CI workflow for automated testing
 
 ## Future ideas
 

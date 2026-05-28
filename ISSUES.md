@@ -43,18 +43,39 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 
 ### #6: `database.py`, `spell_check.py`, `vocabulary.py` not wired into pipeline
 - **File:** `scripts/run_pipeline.py`
-- **Status:** Open
+- **Status:** Resolved (2026-05-28)
 - **Description:** These modules exist but are never imported or called by the orchestration script.
 - **Impact:** Features like job tracking, spell checking, and custom vocabulary are unavailable.
-- **Fix:** Add optional integration points in `run_pipeline.py` (e.g., `--use-database`, `--spell-check`, `--vocabulary-file`).
+- **Fix:** Added optional integration points in `run_pipeline.py` with `--use-database`, `--spell-check`, and `--vocabulary-file` CLI flags.
 
 ## Medium
 
 ### #7: No test coverage
-- **Status:** Open
+- **Status:** Resolved (2026-05-28) — partial
 - **Description:** There is no `tests/` directory and no CI pipeline.
 - **Impact:** Regressions are not caught; refactoring is risky.
-- **Fix:** Add `pytest` tests for core modules and a GitHub Actions workflow.
+- **Fix:** Added `tests/` directory with 31 unit tests for `analyze.py`, `preprocess.py`, `compare.py`, and `diarize.py`. CI pipeline (GitHub Actions) still needed.
+
+### #11: `ThreadPoolExecutor` does not parallelize CPU-bound work
+- **File:** `scripts/run_pipeline.py`
+- **Status:** Open
+- **Description:** Batch processing uses `ThreadPoolExecutor`, but transcription and diarization are CPU-bound tasks. Python's GIL prevents true parallelism with threads, so multiple workers do not speed up processing and may even cause memory contention.
+- **Impact:** Batch processing is not faster than single-file; may cause OOM with multiple large models in memory.
+- **Fix:** Switch to `ProcessPoolExecutor` for CPU-bound stages, or document that `--workers` should be kept at 1 for CPU-only inference.
+
+### #12: `analyze.py` loads full whisperx model just for language detection
+- **File:** `src/analyze.py`
+- **Status:** Open
+- **Description:** `detect_language()` loads `whisperx.load_model("tiny")` (~39 MB) for every audio file. This is wasteful for a metadata extraction step.
+- **Impact:** Slows down Step 1 significantly; redundant model loading.
+- **Fix:** Cache the tiny model across calls, or use a lighter language detection method (e.g., `faster-whisper` decoder-only detection, or `langdetect` on a short audio clip).
+
+### #13: Hardcoded `device="cpu"` and `compute_type="int8"` throughout
+- **File:** `src/transcribe.py`, `src/diarize.py`
+- **Status:** Open
+- **Description:** Both modules hardcode CPU and int8 precision. No auto-detection of `mps` (Apple Silicon), `cuda` (NVIDIA), or config override.
+- **Impact:** Users with GPU or Apple Silicon get no hardware acceleration.
+- **Fix:** Add device auto-detection (`torch.cuda.is_available()`, `torch.backends.mps.is_available()`) and allow override via `config.yaml`.
 
 ### #8: `editor.py` is a placeholder
 - **File:** `src/editor.py`

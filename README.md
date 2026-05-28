@@ -22,13 +22,22 @@ Denne repoen inneholder en fungerende proof-of-concept pipeline med de viktigste
 
 ## Viktige auditfunn
 
-- `transcribe.py` bygger en `Transcriber` med konfigurasjon for `beam_size`, `word_timestamps`, `condition_on_previous_text` og `initial_prompt`, men sender ikke disse parameterne videre til WhisperX-kallet.
-- `analyze.py` bruker `whisper` for språkdeteksjon, mens `pyproject.toml` kun har `whisperx`. Dette kan gi et avhengighetsgap ved installasjon.
-- `diarize.py` bruker `Pipeline.from_pretrained(..., use_auth_token=True)`, så Hugging Face-pålogging er nødvendig for pyannote-modellen.
+### Løst (2026-05-28)
+- ✅ `transcribe.py` sender nå `beam_size`, `vad_filter`, `condition_on_previous_text` og `initial_prompt` videre til WhisperX-kallet.
+- ✅ `analyze.py` bruker nå `whisperx` for språkdeteksjon i stedet for standalone `whisper`.
+- ✅ `diarize.py` har nå `check_hf_auth()`-hjelper med graceful feilmelding ved manglende HF-token.
+- ✅ `database.py`, `spell_check.py` og `vocabulary.py` er nå integrert i pipeline via `--use-database`, `--spell-check` og `--vocabulary-file`.
+- ✅ 31 enhetstester er på plass for `analyze`, `preprocess`, `compare` og `diarize`.
+
+### Gjenstående
 - `config.yaml` inneholder `segmentation_model`, men koden bruker ikke dette feltet i diarization-kallet.
 - Stereo-innhold behandles ved å slå sammen kanaler til mono. Dette kan redusere nøyaktigheten for ekte flere-høyttaler stereo-opptak.
-- `database.py`, `spell_check.py` og `vocabulary.py` er ikke aktivt integrert i `scripts/run_pipeline.py`.
-- Det finnes ingen enhetstester eller integrasjonstester i repoet.
+- `ThreadPoolExecutor` i batch-modus gir ikke ekte parallellisme for CPU-tunge oppgaver (transkripsjon, diarization) pga. Python GIL. Vurder `ProcessPoolExecutor` eller begrensning til én worker per GPU.
+- `analyze.py` laster en hel `whisperx` tiny-modell (~39 MB) kun for språkdeteksjon. Dette er tungvint for et metadatasteg. Vurder caching eller lettere deteksjon.
+- `device="cpu"` og `compute_type="int8"` er hardkodet i `transcribe.py` og `diarize.py`. Ingen auto-deteksjon av `mps` (Apple Silicon) eller `cuda`.
+- `compare.py` bruker fortsatt enkel tids-overlap-alignment (>50 %) og `SequenceMatcher`. Ingen ord-nivå WER-beregning.
+- `editor.py` er fortsatt kun en SRT-eksportfunksjon, ikke en ekte web-editor.
+- Ingen CI-pipeline (GitHub Actions) eller integrasjonstester enda.
 
 ## Rask installasjon
 
@@ -101,13 +110,14 @@ Viktige seksjoner:
 
 ## Nåværende kjente begrensninger
 
-- Ingen tests eller `tests/`-mappe i repoet enda
 - `editor.py` er kun en SRT-funksjon og ikke et ekte web-UI
-- `database.py`, `spell_check.py` og `vocabulary.py` er ikke integrert i pipeline
-- `transcribe.py` bruker ikke alle konfigurasjonsparametre for WhisperX i nåværende implementasjon
-- `analyze.py` har et potensielt avhengighetsgap mellom `whisper` og `whisperx`
-- Diarization krever aktiv Hugging Face-pålogging for `pyannote/speaker-diarization-3.1`
-- Ekte stereo med én taler per kanal håndteres ikke optimalt
+- `config.yaml` inneholder `segmentation_model`, men koden bruker ikke dette feltet
+- Ekte stereo med én taler per kanal håndteres ikke optimalt (kanaler slås sammen til mono)
+- `ThreadPoolExecutor` i batch-modus gir ikke ekte parallellisme for CPU-tunge oppgaver pga. Python GIL
+- `analyze.py` laster en hel `whisperx` tiny-modell (~39 MB) kun for språkdeteksjon
+- `device="cpu"` og `compute_type="int8"` er hardkodet — ingen auto-deteksjon av `mps` eller `cuda`
+- `compare.py` bruker fortsatt enkel tids-overlap-alignment og `SequenceMatcher`, ikke ord-nivå WER
+- Ingen CI-pipeline (GitHub Actions) eller integrasjonstester enda
 
 ## Filstruktur
 
