@@ -92,10 +92,15 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 - **Fix:** Implement word-level alignment (e.g., using `jiwer` or a custom DTW-based approach) and compute actual WER between segments.
 
 ### #10: No Apple Silicon / GPU acceleration
-- **Status:** Open
+- **Status:** Open — men må revideres
 - **Description:** `device="cpu"` and `compute_type="int8"` are hardcoded in `transcribe.py` and `diarize.py`.
-- **Impact:** Slow transcription on Macs and machines with NVIDIA GPUs.
-- **Fix:** Auto-detect `mps` / `cuda` availability and allow config override.
+- **Korreksjon:** CTranslate2 (motoren under faster-whisper/WhisperX) **støtter ikke Apple Metal/MPS** — `device="mps"` gir `ValueError: unsupported device mps`. På Mac er `cpu` eneste alternativ for transkripsjon.
+- **pyannote** (diarization) *kan* bruke `mps` siden det er PyTorch — dette kan detekteres i `diarize.py`.
+- **Impact:** Slow transcription on Macs. Machines with NVIDIA GPUs can use `cuda`.
+- **Fix:**
+  - `transcribe.py`: Auto-detect `cuda` only; keep `cpu` as fallback. Document at MPS ikke støttes.
+  - `diarize.py`: Auto-detect `cuda` og `mps`; keep `cpu` as fallback.
+  - For betydelig hastighetsøkning på Mac: vurder whisper.cpp+CoreML eller MLX — men dette er en egen motor, ikke et device-flagg.
 
 ## Resolved
 

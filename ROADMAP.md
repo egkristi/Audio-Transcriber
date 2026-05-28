@@ -76,14 +76,25 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 - `editor.py` remains a placeholder (SRT export only, no web UI).
 - No CI pipeline or integration tests.
 
-## Near-term priorities
+## Near-term priorities (revidert etter REVIEW.md)
 
-1. Add device auto-detection (`mps` / `cuda`) in `transcribe.py` and `diarize.py`
-2. Implement proper stereo channel separation in `preprocess.py`
-3. Replace `ThreadPoolExecutor` with `ProcessPoolExecutor` or document single-worker recommendation
-4. Add lightweight language detection in `analyze.py` (avoid loading full whisperx model)
-5. Improve `compare.py` alignment with word-level WER using `jiwer`
-6. Add GitHub Actions CI workflow for automated testing
+1. **Ground-truth + WER-harness** (`jiwer`). Transkriber 5–10 minutter manuelt → fasit. Mål WER før alle andre endringer.
+2. **Issue #1** — koble konfig-parametrene til WhisperX-kallet. ✅ Løst.
+3. **Issue #2 (forbedret fiks)** — bruk `faster-whisper` sin innebygde språkdeteksjon i stedet for å laste en hel modell.
+4. **Issue #6 (vocabulary via `initial_prompt`)** — høyest ROI for nøyaktighet. ✅ Integrert.
+5. **Issue #3** — HF-auth-helper. ✅ Løst.
+6. **Mål, mål, mål** — kjør WER mot fasiten for hver endring.
+
+### Utsettes / droppes (over-scope for personlig verktøy)
+- Web-editor (#8) — Subtitle Edit dekker behovet
+- DTW-alignment i `compare.py` (#9) — `jiwer` gir ord-nivå diff billig
+- `spell_check.py` autokorrektur — kan ødelegge egennavn; bruk kun til flagging
+- REST API, Docker, svensk/dansk/finsk — riktig parkert som «future»
+- Full CI (Phase 7) — overinvestering for personlig verktøy; behold målrettede tester
+- Apple Silicon akselerasjon (#10) — CTranslate2 støtter ikke MPS; behold CPU
+
+### Verifiser først
+- Issue #5 (stereo): Kjør `analyze.py` på faktiske filer og sjekk `has_stereo_separation` før du bygger kanal-splitting
 
 ## Future ideas
 
