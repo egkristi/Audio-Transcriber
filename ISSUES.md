@@ -72,10 +72,27 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 
 ### #13: Hardcoded `device="cpu"` and `compute_type="int8"` throughout
 - **File:** `src/transcribe.py`, `src/diarize.py`
-- **Status:** Open
+- **Status:** Resolved (2026-05-28) — partial
 - **Description:** Both modules hardcode CPU and int8 precision. No auto-detection of `mps` (Apple Silicon), `cuda` (NVIDIA), or config override.
 - **Impact:** Users with GPU or Apple Silicon get no hardware acceleration.
-- **Fix:** Add device auto-detection (`torch.cuda.is_available()`, `torch.backends.mps.is_available()`) and allow override via `config.yaml`.
+- **Fix:**
+  - `transcribe.py`: auto-detects `cuda` only (CTranslate2 does not support MPS); falls back to `cpu`
+  - `diarize.py`: auto-detects `cuda` and `mps` (PyTorch); falls back to `cpu`
+
+### #14: Confidence-flagging for review prioritization
+- **File:** `src/confidence.py` (new), `src/transcribe.py`, `src/compare.py`
+- **Status:** Open — design complete, stub created
+- **Description:** Pipeline outputs transcripts but provides no signal about which segments are most likely to contain errors. Manual review is therefore uniform rather than prioritized.
+- **Signals available:**
+  1. **WhisperX alignment score** (`word["score"]`) — acoustic "text vs audio" confidence from wav2vec2 forced alignment
+  2. **faster-whisper decoder signals:** `avg_logprob`, `no_speech_prob`, `compression_ratio`, `temperature`, `word.probability`
+  3. **Cross-model disagreement** — already computed in `compare.py`
+  4. **Acoustic features** from `analyze.py`: SNR, VAD overlap (simultaneous speech)
+- **Approach:**
+  - Phase A (immediate): Extract all signals, normalize to [0,1], compute unweighted priority score. Rank segments by priority for review.
+  - Phase B (future): Use ground-truth fasit to fit a logistic regression model mapping signals → P(error). This calibrates priority into a true probability.
+- **Honest limitation:** Confidence-flagging catches "model knew it was uncertain" errors but misses "confidently wrong" errors — especially plausible substitutions of names and numbers. These get high decoder confidence because they are linguistically plausible. Therefore: confidence is a supplement, not a replacement. Proper nouns and numbers should be reviewed regardless of score.
+- **Fix:** Create `src/confidence.py` that extracts signals from transcription output, computes priority scores, and exports a prioritized review list. Wire into `run_pipeline.py` as optional step.
 
 ### #8: `editor.py` is a placeholder
 - **File:** `src/editor.py`

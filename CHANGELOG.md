@@ -86,6 +86,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+## [0.1.3] - 2026-05-28
+
+### Added
+- `src/confidence.py` — confidence-flagging module for review prioritization
+  - Extracts WhisperX alignment scores (acoustic confidence)
+  - Extracts faster-whisper decoder signals: `avg_logprob`, `no_speech_prob`, `compression_ratio`, `temperature`, `word.probability`
+  - Integrates cross-model disagreement from `compare.py`
+  - Integrates acoustic features from `analyze.py` (SNR, VAD overlap)
+  - Computes unweighted priority scores for segment ranking
+  - Exports prioritized review list for manual correction
+- `tests/test_confidence.py` — 7 unit tests for confidence module
+
 ## [0.1.2] - 2026-05-28
 
 ### Added

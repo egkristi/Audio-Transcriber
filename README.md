@@ -30,6 +30,7 @@ Denne repoen inneholder en fungerende proof-of-concept pipeline med de viktigste
 - ✅ 31 enhetstester er på plass for `analyze`, `preprocess`, `compare` og `diarize`.
 - ✅ `scripts/evaluate.py` — WER/CER-evalueringsharness med `jiwer` for ground-truth-sammenligning.
 - ✅ Device auto-detection: `cuda` for transkripsjon (CTranslate2), `cuda`/`mps` for diarization (PyTorch).
+- ✅ `src/confidence.py` — konfidens-flagging med flere deterministiske signaler (alignment score, avg_logprob, no_speech_prob, compression_ratio, temperature, word probability, model disagreement, SNR). Prioriterer segmenter for manuell review.
 
 ### Gjenstående
 - `config.yaml` inneholder `segmentation_model`, men koden bruker ikke dette feltet i diarization-kallet.
