@@ -86,6 +86,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+## [0.1.2] - 2026-05-28
+
+### Added
+- `scripts/evaluate.py` — WER/CER evaluation harness using `jiwer` for ground-truth comparison
+- `jiwer` dependency in `pyproject.toml`
+- Device auto-detection in `src/diarize.py` (`cuda` / `mps` / `cpu`) via `_auto_detect_device()`
+- Module-level cache for language detection model in `src/analyze.py` to avoid reloading
+
+### Fixed
+- `src/analyze.py` language detection now uses `faster_whisper` directly (not `whisperx.load_model`), with 30-second audio clip for speed
+- `src/transcribe.py` device auto-detection: only `cuda` is supported for GPU; `cpu` fallback documented (CTranslate2 does not support MPS)
+- `src/diarize.py` device auto-detection: supports `cuda`, `mps` (PyTorch), and `cpu`
+
 ## [0.1.1] - 2026-05-28
 
 ### Added

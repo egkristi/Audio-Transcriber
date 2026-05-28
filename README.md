@@ -24,10 +24,12 @@ Denne repoen inneholder en fungerende proof-of-concept pipeline med de viktigste
 
 ### Løst (2026-05-28)
 - ✅ `transcribe.py` sender nå `beam_size`, `vad_filter`, `condition_on_previous_text` og `initial_prompt` videre til WhisperX-kallet.
-- ✅ `analyze.py` bruker nå `whisperx` for språkdeteksjon i stedet for standalone `whisper`.
+- ✅ `analyze.py` bruker nå `faster_whisper` direkte for språkdeteksjon (cachet, 30s-klipp) i stedet for standalone `whisper`.
 - ✅ `diarize.py` har nå `check_hf_auth()`-hjelper med graceful feilmelding ved manglende HF-token.
 - ✅ `database.py`, `spell_check.py` og `vocabulary.py` er nå integrert i pipeline via `--use-database`, `--spell-check` og `--vocabulary-file`.
 - ✅ 31 enhetstester er på plass for `analyze`, `preprocess`, `compare` og `diarize`.
+- ✅ `scripts/evaluate.py` — WER/CER-evalueringsharness med `jiwer` for ground-truth-sammenligning.
+- ✅ Device auto-detection: `cuda` for transkripsjon (CTranslate2), `cuda`/`mps` for diarization (PyTorch).
 
 ### Gjenstående
 - `config.yaml` inneholder `segmentation_model`, men koden bruker ikke dette feltet i diarization-kallet.

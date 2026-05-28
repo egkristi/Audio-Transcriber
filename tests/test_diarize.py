@@ -29,7 +29,8 @@ class TestDiarizer:
     def test_init_defaults(self):
         d = Diarizer()
         assert d.model is None
-        assert d.device == "cpu"
+        # Device is auto-detected; on Mac it may be "mps", on Linux with NVIDIA "cuda", else "cpu"
+        assert d.device in ("cpu", "cuda", "mps")
 
     def test_init_with_config(self):
         d = Diarizer({"model": "custom-model", "threshold": 0.7})

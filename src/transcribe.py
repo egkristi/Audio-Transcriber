@@ -63,11 +63,20 @@ class Transcriber:
         
         try:
             import whisperx
+            import torch
             
             logger.info(f"Loading transcription model: {self.model_name}")
             
-            device = "cpu"  # CPU for Mac compatibility
-            compute_type = self.config.get("compute_type", "int8")
+            # CTranslate2 (under faster-whisper/WhisperX) does NOT support MPS.
+            # Only CUDA is supported for GPU; fallback to CPU.
+            if torch.cuda.is_available():
+                device = "cuda"
+                compute_type = self.config.get("compute_type", "float16")
+            else:
+                device = "cpu"
+                compute_type = self.config.get("compute_type", "int8")
+            
+            logger.info(f"Using device: {device} (compute_type={compute_type})")
             
             self.model = whisperx.load_model(
                 self.model_name,

@@ -13,10 +13,10 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 
 ### #2: Dependency mismatch — `analyze.py` uses `whisper` not declared in `pyproject.toml`
 - **File:** `src/analyze.py`, `pyproject.toml`
-- **Status:** Resolved (2026-05-28)
+- **Status:** Resolved (2026-05-28) — improved in v0.1.2
 - **Description:** `detect_language()` in `analyze.py` imports `whisper` (OpenAI's reference implementation), but `pyproject.toml` only lists `whisperx` as a dependency. This can cause a runtime `ModuleNotFoundError` on fresh installs.
 - **Impact:** Language detection fails on clean environments.
-- **Fix:** Reimplemented language detection using `whisperx` tiny model instead of standalone `whisper`.
+- **Fix:** Reimplemented language detection using `faster_whisper` directly (cached across calls), processing only the first 30 seconds of audio for speed. No standalone `whisper` dependency needed.
 
 ### #3: Diarization requires Hugging Face auth but has no helper
 - **File:** `src/diarize.py`

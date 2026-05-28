@@ -78,12 +78,13 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 
 ## Near-term priorities (revidert etter REVIEW.md)
 
-1. **Ground-truth + WER-harness** (`jiwer`). Transkriber 5–10 minutter manuelt → fasit. Mål WER før alle andre endringer.
+1. **Ground-truth + WER-harness** (`jiwer`). Transkriber 5–10 minutter manuelt → fasit. Mål WER før alle andre endringer. ✅ `scripts/evaluate.py` på plass.
 2. **Issue #1** — koble konfig-parametrene til WhisperX-kallet. ✅ Løst.
-3. **Issue #2 (forbedret fiks)** — bruk `faster-whisper` sin innebygde språkdeteksjon i stedet for å laste en hel modell.
+3. **Issue #2 (forbedret fiks)** — bruk `faster-whisper` sin innebygde språkdeteksjon i stedet for å laste en hel modell. ✅ Løst med modell-caching og 30s-klipp.
 4. **Issue #6 (vocabulary via `initial_prompt`)** — høyest ROI for nøyaktighet. ✅ Integrert.
 5. **Issue #3** — HF-auth-helper. ✅ Løst.
-6. **Mål, mål, mål** — kjør WER mot fasiten for hver endring.
+6. **Issue #10 (device auto-detection)** — `cuda` for transkripsjon, `cuda`/`mps` for diarization. ✅ Løst.
+7. **Mål, mål, mål** — kjør WER mot fasiten for hver endring.
 
 ### Utsettes / droppes (over-scope for personlig verktøy)
 - Web-editor (#8) — Subtitle Edit dekker behovet

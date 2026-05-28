@@ -54,6 +54,19 @@ class DiarizationSegment:
     confidence: float  # Confidence score 0-1
 
 
+def _auto_detect_device() -> str:
+    """Auto-detect best available device for pyannote (PyTorch-based)."""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return "cuda"
+        if torch.backends.mps.is_available():
+            return "mps"
+    except Exception:
+        pass
+    return "cpu"
+
+
 class Diarizer:
     """Wrapper around pyannote speaker diarization."""
     
@@ -61,7 +74,7 @@ class Diarizer:
         """Initialize diarizer with config."""
         self.config = config or {}
         self.model = None
-        self.device = "cpu"  # Default to CPU for Mac compatibility
+        self.device = self.config.get("device") or _auto_detect_device()
         
     def _load_model(self):
         """Lazily load the diarization model."""

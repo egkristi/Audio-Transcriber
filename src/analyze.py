@@ -101,23 +101,49 @@ def detect_stereo_separation(
     return correlation < threshold
 
 
+# Module-level cache for the language detection model
+_language_model = None
+
+
+def _get_language_model():
+    """Lazy-load and cache the tiny faster-whisper model for language detection."""
+    global _language_model
+    if _language_model is None:
+        try:
+            from faster_whisper import WhisperModel
+            _language_model = WhisperModel("tiny", device="cpu", compute_type="int8")
+        except Exception as e:
+            logger.warning(f"Failed to load faster-whisper tiny model: {e}")
+    return _language_model
+
+
 def detect_language(file_path: Path) -> str:
     """
-    Detect language using whisperx/faster-whisper built-in language detection.
+    Detect language using faster-whisper's built-in language detection.
     
-    Falls back to Norwegian ('no') if detection fails or is inconclusive.
-    This avoids requiring the separate `openai-whisper` package.
+    Uses the tiny model (cached across calls) and only processes the first
+    30 seconds of audio for speed. Falls back to Norwegian ('no') on failure.
     """
     try:
         import whisperx
+        import numpy as np
 
-        # Load audio for language detection
+        # Load first 30 seconds of audio for quick detection
         audio = whisperx.load_audio(str(file_path))
-        # Detect using WhisperX's built-in decoder (faster than full transcription)
-        model = whisperx.load_model("tiny", device="cpu", compute_type="int8")
-        result = model.transcribe(audio, task="transcribe")
-        detected = result.get("language", "no")
-        logger.info(f"Detected language for {file_path.name}: {detected}")
+        max_samples = 30 * 16000  # 30s at 16kHz
+        if len(audio) > max_samples:
+            audio = audio[:max_samples]
+
+        model = _get_language_model()
+        if model is None:
+            return "no"
+
+        # faster-whisper transcribe returns (segments_generator, info)
+        segments, info = model.transcribe(audio, beam_size=1)
+        # Consume generator to ensure info is populated
+        next(iter(segments), None)
+        detected = info.language if info and info.language else "no"
+        logger.info(f"Detected language for {file_path.name}: {detected} (confidence: {info.language_probability:.2f})")
         return detected
     except Exception as e:
         logger.warning(f"Language detection failed for {file_path}: {e}, defaulting to 'no'")
