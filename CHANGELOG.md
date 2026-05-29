@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-05-29
+
+### Added
+- **Northern Norwegian dialect awareness** (`src/normalize.py`) — new `NORWEGIAN_DIALECT_MAP` with 30+ dialect words (æ, ikkje, ka, kor, mæ, dæ, dokker, etc.). Dialect words are flagged with `[dialect_word]` type for informational purposes but NOT auto-corrected — dialect is valid Norwegian.
+- **Northern Norwegian question word detection** (`src/normalize.py`) — dialect question words ("ka", "kæ", "kor", "korsn", "koffer") now trigger `?` at segment end alongside standard question words.
+- **Northern Norwegian place names** (`src/normalize.py`) — expanded `NORWEGIAN_PROPER_NOUNS` with 50+ place names from Nordland, Troms, and Finnmark.
+
+### Changed
+- **Module docstring** (`src/normalize.py`) — updated to document Northern Norwegian dialect features and the module's approach to dialect handling (flag but don't correct).
+- **README.md** — updated project description to mention Northern Norwegian dialect focus.
+- **AGENTS.md** — added dialect information to project identity section.
+
 ## [0.1.8] - 2026-05-29
 
 ### Added

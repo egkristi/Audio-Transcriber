@@ -2,7 +2,8 @@
 Norwegian Text Normalization Module
 
 Post-processes WhisperX transcription output to fix common errors
-specific to Norwegian language transcription.
+specific to Norwegian language transcription, with awareness of
+Northern Norwegian dialects (Nordland, Troms, Finnmark).
 
 Common Whisper errors on Norwegian:
 1. No punctuation — verbatim model outputs stream of lowercase words
@@ -12,12 +13,25 @@ Common Whisper errors on Norwegian:
 5. English word substitution
 6. Case issues (all lowercase segments)
 7. Trailing/leading whitespace
+8. Dialect confusion — Whisper may normalize Northern Norwegian
+   dialect words to standard Eastern Norwegian (e.g., "æ" → "jeg",
+   "ikkje" → "ikke", "ka" → "hva")
 
 This module has two modes:
 - Conservative (default): flags issues for review, auto-fixes only
   punctuation, capitalization, and stuttering
-- Aggressive (auto_correct=True): also applies character substitutions
-  and English word replacements
+- Aggressive (auto_correct=True): also applies character substitutions,
+  English word replacements, and dialect normalization
+
+Dialect notes:
+- The target audio is Northern Norwegian (Nordland, Troms, Finnmark)
+- Common dialect features: "æ" (jeg), "ikkje" (ikke), "ka" (hva),
+  "kor" (hvor), "mæ" (meg), "dæ" (deg), "sæ" (seg), "dokker" (dere),
+  "no" (noe), "bærre" (bare), "itte" (ikke, some areas)
+- Whisper's nb-whisper-large-verbatim model may output either dialect
+  or standard forms depending on training data
+- The module flags dialect-standard mismatches but does NOT auto-correct
+  them — dialect is valid Norwegian and should be preserved
 """
 
 import re
@@ -124,12 +138,73 @@ ENGLISH_TO_NORWEGIAN = {
 SENTENCE_END_FILLERS = {'ja', 'nei', 'da', 'hæ'}
 CLAUSE_BREAK_WORDS = {'så', 'men', 'for', 'og', 'at'}
 
+# Northern Norwegian dialect word mappings.
+# Whisper may output either dialect or standard forms. These mappings
+# help flag when the model mixes forms inconsistently.
+# Format: dialect_word -> standard_equivalent (for flagging only)
+# NOTE: Dialect is valid Norwegian. These are NOT auto-corrected.
+NORWEGIAN_DIALECT_MAP = {
+    # First person pronoun
+    'æ': 'jeg',
+    'eg': 'jeg',
+    'e': 'jeg',
+    'je': 'jeg',
+    # Negation
+    'ikkje': 'ikke',
+    'itte': 'ikke',
+    'ikke': 'ikke',  # standard, included for completeness
+    # Question words
+    'ka': 'hva',
+    'kæ': 'hva',
+    'kor': 'hvor',
+    'korsn': 'hvordan',
+    'kordan': 'hvordan',
+    'koffer': 'hvorfor',
+    'koffor': 'hvorfor',
+    # Pronouns
+    'mæ': 'meg',
+    'dæ': 'deg',
+    'sæ': 'seg',
+    'dokker': 'dere',
+    'dåkker': 'dere',
+    'dokkeres': 'deres',
+    'dåkkeres': 'deres',
+    'han': 'ham',  # "han" used as object in dialect
+    'ho': 'hun',
+    'hu': 'hun',
+    # Adverbs and other
+    'no': 'noe',
+    'nåkkå': 'noe',
+    'nokka': 'noe',
+    'bærre': 'bare',
+    'berre': 'bare',
+    'sæ': 'seg',
+    'nån': 'noen',
+    'någen': 'noen',
+    'mykje': 'mye',
+    'mye': 'mye',  # standard
+    'lite': 'lite',  # standard
+    'lita': 'liten',
+    'ille': 'ikke',  # some areas
+}
+
 # Norwegian words that should always be capitalized (names, places)
+# Includes Northern Norwegian place names and common names from the dataset
 NORWEGIAN_PROPER_NOUNS = {
     'konrad', 'håvard', 'vardin', 'inger-anna', 'ingerland', 'astrid-marie',
     'bjørn', 'geir', 'jorunn', 'davidsen', 'salomon', 'simon', 'mikkel',
     'bremdeberg', 'sandnessjøen', 'bergem', 'salgsjukeren', 'biltemaet',
     'poldkaia', 'røde kors',
+    # Northern Norwegian place names
+    'nordland', 'troms', 'finnmark', 'tromsø', 'bodø', 'narvik', 'harstad',
+    'hammerfest', 'alta', 'vadsø', 'kirkenes', 'mo i rana', 'mosjøen',
+    'fauske', 'sortland', 'stokmarknes', 'leknes', 'svolvær', 'andøya',
+    'senja', 'kvaløya', 'ringvassøya', 'lyngen', 'skjervøy', 'storslett',
+    'karasjok', 'kautokeino', 'lakselv', 'honningsvåg', 'mehamn',
+    'berlevåg', 'båtsfjord', 'vardø', 'vadsø', 'nesna', 'hemnes',
+    'rana', 'beiarn', 'saltdal', 'steigen', 'hamarøy', 'tysfjord',
+    'lødingen', 'evenes', 'skånland', 'bjarkøy', 'kvæfjord', 'dyrøy',
+    'sørreisa', 'målselv', 'bardu', 'salangen', 'lavangen', 'gratangen',
 }
 
 
@@ -232,7 +307,7 @@ def _restore_punctuation(words: List[str]) -> Tuple[List[str], List[Dict]]:
     # Add period or question mark at end if last word doesn't end with punctuation
     if result and not result[-1].endswith(('.', '!', '?')):
         # Check if any word in the segment is a question word
-        has_question = any(w.lower().rstrip('?') in {'hæ', 'hva', 'hvem', 'hvor', 'hvordan', 'hvorfor', 'når'} for w in result)
+        has_question = any(w.lower().rstrip('?') in {'hæ', 'hva', 'hvem', 'hvor', 'hvordan', 'hvorfor', 'når', 'ka', 'kæ', 'kor', 'korsn', 'kordan', 'koffer', 'koffor'} for w in result)
         if has_question:
             result[-1] = result[-1] + '?'
             corrections.append({
@@ -365,6 +440,20 @@ def normalize_norwegian_text(
                 "type": "english_word",
                 "explanation": f"Engelsk ord '{word}' — kanskje ment '{ENGLISH_TO_NORWEGIAN[word]}'?"
             })
+    
+    # 7b. Flag dialect-standard mismatches (informational only)
+    # Northern Norwegian dialect is valid — we flag but don't correct
+    for i, word in enumerate(word_list):
+        if word in NORWEGIAN_DIALECT_MAP:
+            standard = NORWEGIAN_DIALECT_MAP[word]
+            if word != standard:
+                corrections.append({
+                    "original": word,
+                    "corrected": standard,
+                    "position": i,
+                    "type": "dialect_word",
+                    "explanation": f"Dialektord '{word}' — standard '{standard}' (dialekt er OK, flagges kun for informasjon)"
+                })
     
     # 8. Flag excessive repetition (across whole segment, not just consecutive)
     for word in set(word_list):

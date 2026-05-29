@@ -1,6 +1,6 @@
 # Audio-Transcriber
 
-Et Python-basert transkripsjonssystem for norsk tale. Prosjektet kombinerer en flerfase-pipeline for analyse, adaptiv forhåndsbehandling, speaker diarization, flermodell-transkripsjon, sammenligning og manuell sluttkorrektur.
+Et Python-basert transkripsjonssystem for norsk tale, med særlig vekt på **nordnorske dialekter** (Nordland, Troms, Finnmark). Prosjektet kombinerer en flerfase-pipeline for analyse, adaptiv forhåndsbehandling, speaker diarization, flermodell-transkripsjon, sammenligning og manuell sluttkorrektur.
 
 ## Hva er på plass nå
 

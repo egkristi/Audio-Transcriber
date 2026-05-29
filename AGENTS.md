@@ -10,6 +10,16 @@ Drive the project toward measurably accurate Norwegian transcription of real cal
 
 The non-negotiable goal: a fasit (ground-truth transcript) plus a baseline WER number on a real recording. Without those, every "improvement" is speculation.
 
+**Session Workflow**
+
+1. Solve issues in ISSUES.md, then keep working on ROADMAP.md
+2. If the need for new features are identified, add to ROADMAP.md
+3. If any issues are identified, add to ISSUES.md
+4. For each new features/change update CHANGELOG.md, then commit to git and push.
+5. Do a test run and then do an extensive analysis and audit of the results.
+6. Add suggested improvemnts to ROADMAP.md
+7. Add any issues to ISSUES.md
+
 ---
 
 ## 2. Project Identity
@@ -17,6 +27,7 @@ The non-negotiable goal: a fasit (ground-truth transcript) plus a baseline WER n
 - **Name:** Audio-Transcriber
 - **Purpose:** Norwegian audio transcription pipeline with speaker diarization, multi-model comparison, and confidence-based review prioritization
 - **Primary language:** Norwegian (Bokmål/Nynorsk). Language detection currently falls back to `"no"` when confidence < 0.5 — a deliberate hardcode for a Norwegian-only tool.
+- **Dialect:** Northern Norwegian (Nordland, Troms, Finnmark). The audio recordings feature Northern Norwegian dialects with characteristic features: "æ" (jeg), "ikkje" (ikke), "ka" (hva), "kor" (hvor), "mæ" (meg), "dæ" (deg), "sæ" (seg), "dokker" (dere), "no" (noe). The normalize module flags dialect-standard mismatches for awareness but does NOT auto-correct — dialect is valid Norwegian.
 - **License:** MIT
 - **Repository:** https://github.com/egkristi/Audio-Transcriber
 
