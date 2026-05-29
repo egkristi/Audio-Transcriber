@@ -70,4 +70,5 @@ htmlcov/
 
 # Lock files (if using uv)
 uv.lock
-testdata/
+testdata/output_test/
+output/
