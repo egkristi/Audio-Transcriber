@@ -68,22 +68,28 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 
 > Se `ISSUES.md` for fullstendig og oppdatert status på alle problemer. Denne seksjonen er et sammendrag.
 
-### Resolved (2026-05-28)
+### Resolved (2026-05-28 to 2026-05-29)
 - ✅ Issue #1 — konfig-parametre koblet til WhisperX
 - ✅ Issue #2 — språkdeteksjon via `faster_whisper` (cachet, 30s-klipp)
 - ✅ Issue #3 — HF-auth-helper
 - ✅ Issue #6 — database/spell/vocab wiret inn i pipeline
 - ✅ Issue #10/#13 — device auto-detection (CTranslate2=cuda, PyTorch=cuda/mps)
 - ✅ Issue #12 — modell-caching for språkdeteksjon
+- ✅ Issue #11 — ThreadPoolExecutor default workers=1 (GIL-safe)
+- ✅ Issue #14 — confidence.py wiret inn i pipeline med hard-rules
+- ✅ Issue #15 — language detection confidence threshold
+- ✅ Issue #16 — loudness clipping fixed
+- ✅ Issue #17 — corrupted file filtering
+- ✅ Issue #18 — SRT speaker format fixed
+- ✅ Issue #19 — beam size increased to 10
+- ✅ Issue #20 — decoder signals passed to confidence extractor
 
-### Remaining
-- **#4:** `segmentation_model` ignoreres i `diarize.py`
-- **#5:** Stereo håndteres ikke optimalt — verifiser på faktiske filer først
-- **#11:** `ThreadPoolExecutor` gir ikke ekte parallellisme for CPU-tunge oppgaver
-- **#14:** `confidence.py` er designet og testet, men ikke wiret inn i pipeline
-- **#8:** `editor.py` er fortsatt placeholder
-- **#9:** `compare.py` bruker enkel tids-overlap-alignment
-- Ingen CI-pipeline
+### Remaining (as of 2026-05-29)
+- **#4:** `segmentation_model` ignoreres i `diarize.py` — lav prioritet, pyannote 3.1 bundler egen segmentering
+- **#5:** Stereo håndteres ikke optimalt — verifiser på faktiske filer først (alle testfiler er mono)
+- **#8:** `editor.py` er fortsatt placeholder — korrekt parkert, Subtitle Edit dekker behovet
+- **#9:** `compare.py` bruker enkel tids-overlap-alignment — lav prioritet
+- Ingen CI-pipeline — over-scope for personlig verktøy
 
 ## Near-term priorities (revidert etter REVIEW.md)
 

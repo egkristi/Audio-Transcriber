@@ -7,9 +7,16 @@
 
 ## Sammendrag
 
-Prosjektet er nå **verifisert på ekte data**. Pipeline kjører end-to-end på reelle opptak og produserer gyldig SRT med norsk transkripsjon. 38 enhetstester passerer. Kritiske blocker-bugs (ffmpeg, JSON-serialisering, whisperx API-mismatch, VAD API, NaN i stereo) er løst.
+Prosjektet er nå **verifisert på ekte data**. Pipeline kjører end-to-end på reelle opptak og produserer gyldig SRT med norsk transkripsjon. 38 enhetstester passerer. Kritiske blocker-bugs (ffmpeg, JSON-serialisering, whisperx API-mismatch, VAD API, NaN i stereo, confidence priority all-zero) er løst.
 
-**Men:** ~400 av 410 testfiler er korrupte ("moov atom not found"). Språkdeteksjon returnerer feilaktig "et" (estisk) for norsk tale. Ground-truth fasit og WER-måling mangler fortsatt. Dette er nå de eneste gjenstående blocker-oppgavene.
+**Status etter siste kjøring (2026-05-29):**
+- 2 gyldige filer funnet (1 korrupt filtrert ut)
+- File 1: 11 minutter, 22 segmenter, priority range 0.562–0.000
+- File 2: 17 minutter, 35 segmenter, priority range 0.596–0.000
+- Confidence-flagging fungerer: `low_logprob` og `contains_numbers` flagg identifisert
+- Hard-rules fungerer: segment med "14 fot" korrekt flagget med `contains_numbers`
+
+**Gjenstående blocker:** Ground-truth fasit og WER-måling mangler fortsatt.
 
 ---
 
@@ -52,7 +59,7 @@ Prosjektet er nå **verifisert på ekte data**. Pipeline kjører end-to-end på 
 
 ---
 
-## Løste kritiske funn (fikset i commit 921604d)
+## Løste kritiske funn (fikset i commit 921604d og 3894ce1)
 
 | Funn | Fil | Fix |
 |------|-----|-----|
@@ -63,6 +70,8 @@ Prosjektet er nå **verifisert på ekte data**. Pipeline kjører end-to-end på 
 | **WhisperX API mismatch** | `transcribe.py` | `beam_size`, `initial_prompt`, etc. flyttet til `asr_options` i `load_model()` |
 | **Word alignment ikke tilgjengelig** | `transcribe.py` | Graceful warning, fortsetter uten alignment |
 | **pyloudnorm manglet** | `pyproject.toml` | Eksplisitt avhengighet lagt til |
+| **Confidence priority all-zero** | `transcribe.py`, `run_pipeline.py` | Decoder signals (`avg_logprob`, etc.) flyter nå gjennom pipeline til confidence extractor |
+| **Hard-rules for high-risk content** | `confidence.py` | Tall og proper nouns flagges alltid — fanger "confidently wrong" feil |
 
 ---
 
