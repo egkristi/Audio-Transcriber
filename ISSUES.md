@@ -166,10 +166,13 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 
 ### #22: `preprocess.py` loads audio twice — unnecessary I/O and memory use
 - **File:** `src/preprocess.py`, `src/analyze.py`
-- **Status:** Open
-- **Description:** `analyze_audio()` runs `librosa.load(..., mono=True)`. Then `preprocess_audio()` runs `librosa.load(..., mono=False)`. The same file is loaded twice.
-- **Impact:** Unnecessary I/O and memory use. For batch of long recordings this is noticeable.
-- **Fix:** Cache `audio_data` in `AudioMetadata`, or pass it explicitly from analyze to preprocess.
+- **Status:** Resolved (2026-05-29)
+- **Description:** `analyze_audio()` ran `librosa.load(..., mono=True)`. Then `preprocess_audio()` ran `librosa.load(..., mono=False)`. The same file was loaded twice.
+- **Impact:** Unnecessary I/O and memory use. For batch of long recordings this was noticeable.
+- **Fix:** 
+  1. `analyze_audio()` now loads audio once with `mono=False` and stores it in `AudioMetadata.audio_data` (an ephemeral field excluded from JSON serialization).
+  2. `preprocess_audio()` reuses `metadata.audio_data` when available, falling back to `librosa.load()` only when absent.
+  3. `save_metadata()` explicitly strips `audio_data` before JSON serialization to avoid massive metadata files.
 - **Reference:** AUDIT.md H2
 
 ### #23: `vocabulary.py` token estimate is BPE-naive — risks silent prompt truncation

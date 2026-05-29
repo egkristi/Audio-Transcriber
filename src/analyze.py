@@ -7,7 +7,7 @@ Includes file properties, VAD detection, bandwidth detection, and language ident
 
 import json
 import subprocess
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -45,6 +45,9 @@ class AudioMetadata:
     total_confidence: float = 1.0  # Aggregate confidence across all segments (0-1)
     segments_count: int = 0  # Number of transcription segments
     flagged_segments_count: int = 0  # Segments with confidence < 0.7 or flags
+    
+    # Ephemeral: loaded audio data (not serialized to JSON)
+    audio_data: Optional[np.ndarray] = field(default=None, repr=False, compare=False)
 
 
 def get_ffprobe_info(file_path: Path) -> dict:
@@ -312,18 +315,22 @@ def analyze_audio(file_path: Path, config: Optional[dict] = None) -> AudioMetada
     duration = float(fmt.get("duration", 0))
     file_size_mb = file_path.stat().st_size / (1024 * 1024)
 
-    # Load audio with librosa
+    # Load audio once with librosa (stereo if available, for reuse in preprocess)
     logger.debug(f"Loading audio: sr={sample_rate}, channels={channels}")
-    audio_data, sr = librosa.load(str(file_path), sr=sample_rate, mono=True)
+    audio_data_stereo, sr = librosa.load(str(file_path), sr=sample_rate, mono=False)
+
+    # Mono version for analysis steps that need it
+    if audio_data_stereo.ndim == 2:
+        audio_data_mono = librosa.to_mono(audio_data_stereo)
+    else:
+        audio_data_mono = audio_data_stereo
 
     # Run analysis steps
-    bandwidth = detect_bandwidth(sr, audio_data)
-    stereo_sep = detect_stereo_separation(
-        librosa.load(str(file_path), sr=sr, mono=False)[0], sr
-    )
+    bandwidth = detect_bandwidth(sr, audio_data_mono)
+    stereo_sep = detect_stereo_separation(audio_data_stereo, sr)
     language = detect_language(file_path)
-    has_speech = detect_speech_vad(audio_data, sr)
-    loudness, peak_db, dyn_range = calculate_loudness_and_dynamics(audio_data, sr)
+    has_speech = detect_speech_vad(audio_data_mono, sr)
+    loudness, peak_db, dyn_range = calculate_loudness_and_dynamics(audio_data_mono, sr)
 
     metadata = AudioMetadata(
         file_path=str(file_path),
@@ -341,6 +348,7 @@ def analyze_audio(file_path: Path, config: Optional[dict] = None) -> AudioMetada
         loudness_lufs=loudness,
         peak_db=peak_db,
         dynamic_range_db=dyn_range,
+        audio_data=audio_data_stereo,
     )
 
     logger.info(f"Analysis complete: {metadata.file_name}")
@@ -350,8 +358,13 @@ def analyze_audio(file_path: Path, config: Optional[dict] = None) -> AudioMetada
 
 
 def save_metadata(metadata: AudioMetadata, output_dir: Path) -> Path:
-    """Save metadata as JSON file next to audio file."""
+    """Save metadata as JSON file next to audio file.
+    
+    Excludes ephemeral audio_data to avoid massive JSON files.
+    """
     output_path = output_dir / f"{Path(metadata.file_path).stem}_metadata.json"
-    save_json(asdict(metadata), output_path)
+    data = asdict(metadata)
+    data.pop("audio_data", None)
+    save_json(data, output_path)
     logger.info(f"Metadata saved to {output_path}")
     return output_path

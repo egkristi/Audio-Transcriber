@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Explicit dependencies** (`pyproject.toml`) — pinned `symspellpy>=6.7.0` and `soundfile>=0.12.0` that were previously implicit transitive dependencies (ISSUES.md #24 / AUDIT.md M1).
 - **HF token validation** (`src/diarize.py`) — `check_hf_auth()` now calls `huggingface_hub.whoami()` to verify token validity, not just existence. Logs clear error if token is invalid (ISSUES.md #26 / AUDIT.md M4).
+- **Audio data caching** (`src/analyze.py`, `src/preprocess.py`) — `analyze_audio()` now loads audio once with `mono=False` and stores it in `AudioMetadata.audio_data` (ephemeral, excluded from JSON). `preprocess_audio()` reuses it instead of reloading from disk, eliminating the double-load (ISSUES.md #22 / AUDIT.md H2).
 
 ### Changed
 - **README.md** — updated "Løst" section with all resolved items through v0.1.6; fixed batch example to use `--workers 1` instead of `--workers 4`.

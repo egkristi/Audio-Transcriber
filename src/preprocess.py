@@ -283,8 +283,13 @@ def preprocess_audio(
     denoise_enabled = config.get("denoising", False)
     denoise_strength = config.get("denoising_strength", 0.5)
     
-    # Load audio
-    audio_data, sr = librosa.load(str(file_path), sr=metadata.sample_rate, mono=False)
+    # Load audio (reuse from metadata if available to avoid double-load)
+    if metadata.audio_data is not None:
+        audio_data = metadata.audio_data
+        sr = metadata.sample_rate
+        logger.debug("Reusing audio data loaded during analysis step")
+    else:
+        audio_data, sr = librosa.load(str(file_path), sr=metadata.sample_rate, mono=False)
     
     # Handle stereo separation: split channels if detected
     if audio_data.ndim == 2 and metadata.has_stereo_separation:
