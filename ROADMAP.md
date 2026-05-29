@@ -16,23 +16,23 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 - [x] `src/diarize.py` — speaker diarization wrapper
 - [x] `src/transcribe.py` — WhisperX transcription and exporter
 - [x] `src/compare.py` — model comparison and prioritized review output
-- [~] `src/editor.py` — export SRT / manual instructions (placeholder for web editor)
+- [~] `src/editor.py` — export SRT / manual instructions (placeholder for web editor). Subtitle Edit covers the need; web editor is out of scope.
 
 ### Phase 3: Orchestration & CLI
 - [x] `scripts/run_pipeline.py` — pipeline orchestration
 - [x] CLI argument parsing (`--input`, `--output-dir`, `--step`, `--workers`, etc.)
 - [x] Batch folder processing with worker pool
 - [x] Single-file processing support
-- [~] Step-level execution is present, but some step interdependencies and metadata reuse need hardening
+- [x] Step-level execution with hardened metadata reuse (audio data cached in `AudioMetadata.audio_data` between analyze and preprocess, #22)
 
 ### Phase 4: Configuration & Utilities
 - [x] `src/utils.py` — logging, file helpers, JSON utilities
 - [x] `src/config.py` — YAML configuration loader
 - [x] Logging setup with console/file handlers
 - [x] `src/database.py` integrated into pipeline via `--use-database`
-- [x] `src/spell_check.py` integrated into pipeline via `--spell-check`
-- [x] `src/vocabulary.py` integrated into pipeline via `--vocabulary-file`
-- [ ] VAD configuration and actual model selection should be hardened
+- [x] `src/spell_check.py` integrated into pipeline via `--spell-check` (disabled when no dictionary loaded — honest failure, #21)
+- [x] `src/vocabulary.py` integrated into pipeline via `--vocabulary-file` (accurate token counting with Whisper tokenizer, #23)
+- [x] VAD configuration via `config.yaml` (`analysis.vad_model: "silero"`); Silero VAD loaded via `torch.hub.load()`
 
 ### Phase 5: Feature gap closing
 - [x] **Per-segment confidence level** (`src/transcribe.py`) — `TranscriptionSegment.confidence_level` computed from `avg_logprob`, `no_speech_prob`, `compression_ratio`, `temperature` using geometric mean for conservative scoring. Exported in SRT as `[LOW CONFIDENCE]` / `[MEDIUM CONFIDENCE]` labels.
@@ -54,20 +54,20 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 - [x] More robust alignment and diffing beyond simple overlap / SequenceMatcher (jiwer WER-based similarity)
 - [x] Full audit logging / job tracking using SQLite or JSON logs (basic integration via `--use-database`)
 - [x] **Speaker diarization integration** (`src/diarize.py` + `src/transcribe.py`) — pyannote/speaker-diarization-3.1 for speaker separation; `align_with_diarization()` assigns `SPEAKER_00`, `SPEAKER_01`, etc. to each transcription segment; SRT/JSON/VTT output includes inline speaker labels. Configurable via `config.yaml` (`min_speakers`, `max_speakers`). **Status: implemented, needs real-data verification.**
-- [ ] True editor UI with waveform and speaker-aware review
+- [~] True editor UI with waveform and speaker-aware review — out of scope; Subtitle Edit covers the need (#8)
 
 ### Phase 6: Optimization
-- [ ] Apple Silicon acceleration with CoreML / MLX support
-- [ ] CUDA/GPU support for Linux/Windows
-- [ ] Model caching and memory optimization for batch jobs
+- [~] Apple Silicon acceleration with CoreML / MLX support — CTranslate2 does not support MPS; whisper.cpp+CoreML or MLX would require a separate engine. Deferred.
+- [x] CUDA/GPU support for Linux/Windows — device auto-detection implemented (#13). CTranslate2 uses CUDA when available; PyTorch diarization uses CUDA/MPS.
+- [~] Model caching and memory optimization for batch jobs — language detection model cached (`_language_model`); transcription model loaded once per run. Full batch memory optimization is future work.
 - [ ] Performance profiling and resource usage monitoring
 
 ### Phase 7: Quality & documentation
-- [ ] Add unit tests
-- [ ] Add integration tests
-- [ ] Add CI pipeline
+- [x] Add unit tests — 38 tests covering `analyze.py`, `preprocess.py`, `compare.py`, `diarize.py`
+- [ ] Add integration tests — requires real audio fixtures; blocked until fasit exists
+- [~] Add CI pipeline — overinvestment for personal tool; targeted unit tests are sufficient
 - [ ] Add troubleshooting guide
-- [ ] Add example workflows to README
+- [x] Add example workflows to README — batch and single-file examples present
 - [ ] Add API documentation / developer reference
 
 ## Key audit findings to address next
