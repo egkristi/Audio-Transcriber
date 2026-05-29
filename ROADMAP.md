@@ -70,6 +70,14 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 - [x] Add example workflows to README — batch and single-file examples present
 - [ ] Add API documentation / developer reference — **deferred until API stabilizes**
 
+### Phase 8: Dialect recognition & adaptation
+- [~] **Dialect-aware normalization** (`src/normalize.py`) — basic dialect word flagging implemented for Northern Norwegian (Nordland, Troms, Finnmark). Dialect words are flagged for awareness but NOT auto-corrected. See `NORWEGIAN_DIALECT_MAP`.
+- [ ] **Dialect-adaptive vocabulary** — extend `src/vocabulary.py` to generate dialect-specific `initial_prompt` based on detected dialect region. Inject common dialect words into Whisper's prompt to improve recognition of non-standard forms.
+- [ ] **Dialect-specific language model** — evaluate whether fine-tuning or LoRA adapters on a Norwegian dialect corpus (e.g., Nordic Dialect Corpus, NB Whisper) improves WER for Northern Norwegian speech vs. the generic nb-whisper-large-verbatim model.
+- [ ] **Multi-dialect support** — extend dialect map to cover other Norwegian dialects (Trøndersk, Vestlandsk, Sørlandsk, Østlandsk) with region detection heuristics based on distinctive word patterns.
+- [ ] **Dialect confidence scoring** — add dialect-specific confidence signals: flag segments where Whisper outputs standard forms but dialect forms are expected, and vice versa. Prioritize these for review.
+- [ ] **Dialect-preserving output** — ensure that dialect features are preserved in SRT output and not silently normalized to Bokmål. The current approach (flag but don't correct) is the foundation; formalize as a configurable option (`--preserve-dialect`).
+
 ## Test run findings (2026-05-29)
 
 Real pipeline execution on `testdata/Call recording Elida Anna Wiktoria Kristiansen_250923_040529.m4a` (683s, 48kHz AAC) revealed:
@@ -118,6 +126,7 @@ Real pipeline execution on `testdata/Call recording Elida Anna Wiktoria Kristian
 ### Remaining (as of 2026-05-29)
 - **#8:** `editor.py` er fortsatt placeholder — korrekt parkert, Subtitle Edit dekker behovet
 - Ingen CI-pipeline — over-scope for personlig verktøy
+- **Dialektgjenkjenning:** Grunnleggende nordnorsk dialekt-flagg er implementert i `normalize.py` (se Phase 8). Gjenstående: dialekt-adaptiv vokabularinjeksjon, finjustert modell for nordnorsk, multi-dialekt-støtte, dialekt-konfidensskåring, og dialekt-bevarende output.
 - **Spell-checking:** Featuren er deaktivert inntil en norsk ordbok lastes inn (ISSUES.md #21 er løst — honest failure — men selve funksjonaliteten krever fortsatt ekstern ordbok)
 - **HF gated repo access:** `pyannote/speaker-diarization-3.1` krever eksplisitt aksept på huggingface.co. Token validerer, men brukeren er ikke i autorisert liste. Bruk `--no-diarize` inntil tilgang er gitt.
 

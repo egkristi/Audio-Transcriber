@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-05-29
+
+### Added
+- **Dialect recognition roadmap** (`ROADMAP.md`) — new Phase 8 with 6 dialect-related items: dialect-adaptive vocabulary, dialect-specific language model, multi-dialect support, dialect confidence scoring, and dialect-preserving output. Current dialect flagging in `normalize.py` marked as partial implementation.
+
 ## [0.1.9] - 2026-05-29
 
 ### Added
