@@ -253,7 +253,8 @@ class CommonNorwegianVocabulary:
 
 def load_vocabulary(
     vocab_file: Optional[Path] = None,
-    domain: Optional[str] = None
+    domain: Optional[str] = None,
+    use_default_norwegian: bool = True
 ) -> VocabularyManager:
     """
     Load or create vocabulary manager.
@@ -261,14 +262,36 @@ def load_vocabulary(
     Args:
         vocab_file: Path to custom vocabulary file
         domain: Domain for predefined vocabulary
+        use_default_norwegian: Load default Norwegian vocabulary (places, names,
+            institutions) when no custom file is provided. Default True.
         
     Returns:
         Initialized VocabularyManager
     """
     if vocab_file and vocab_file.exists():
-        logger.info(f"Loading vocabulary from {vocab_file}")
+        logger.info(f"Loading custom vocabulary from {vocab_file}")
         return VocabularyManager(vocab_file)
-    elif domain:
+    
+    # Load default Norwegian vocabulary
+    if use_default_norwegian:
+        default_vocab = Path(__file__).parent.parent / "data" / "norwegian_vocabulary.json"
+        if default_vocab.exists():
+            logger.info(f"Loading default Norwegian vocabulary ({default_vocab})")
+            manager = VocabularyManager(default_vocab)
+            
+            # Also add domain vocabulary if specified
+            if domain:
+                domain_vocab = CommonNorwegianVocabulary.get_domain_vocabulary(domain)
+                for word in domain_vocab:
+                    manager.add_word(word, context=domain)
+                logger.info(f"Added {len(domain_vocab)} domain words for '{domain}'")
+            
+            return manager
+        else:
+            logger.warning(f"Default Norwegian vocabulary not found at {default_vocab}")
+    
+    # Fallback to empty or domain-only
+    if domain:
         logger.info(f"Loading predefined vocabulary for domain: {domain}")
         return CommonNorwegianVocabulary.create_manager(domain)
     else:

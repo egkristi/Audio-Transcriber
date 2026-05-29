@@ -38,6 +38,7 @@ from src.database import TranscriptionDatabase
 from src.vocabulary import load_vocabulary
 from src.spell_check import check_transcription
 from src.confidence import extract_confidence_signals
+from src.normalize import normalize_transcription_segments, export_normalization_report
 
 logger = get_logger("pipeline")
 
@@ -196,13 +197,24 @@ class AudioTranscriberPipeline:
                 logger.info("\nSTEP 3/4: Transcription (Primary Model)")
                 transcription_config = self.config.data
                 
-                # Build initial prompt from vocabulary if provided
+                # Build initial prompt from vocabulary
+                # Default: load built-in Norwegian vocabulary (places, names, institutions)
+                # Override with --vocabulary-file if provided
                 initial_prompt = None
-                if vocab_file and vocab_file.exists():
-                    vocab = load_vocabulary(vocab_file=vocab_file)
+                vocab_config = self.config.get("vocabulary", {})
+                use_initial_prompt = vocab_config.get("use_initial_prompt", True)
+                
+                if use_initial_prompt:
+                    if vocab_file and vocab_file.exists():
+                        vocab = load_vocabulary(vocab_file=vocab_file, use_default_norwegian=False)
+                    else:
+                        vocab = load_vocabulary(use_default_norwegian=True)
+                    
                     initial_prompt = vocab.generate_initial_prompt()
-                    transcription_config = dict(transcription_config)
-                    transcription_config["initial_prompt"] = initial_prompt
+                    if initial_prompt:
+                        transcription_config = dict(transcription_config)
+                        transcription_config["initial_prompt"] = initial_prompt
+                        logger.info(f"Initial prompt generated ({len(vocab.vocabulary)} vocabulary items)")
                 
                 primary_segments, primary_output = transcribe_audio(
                     preprocessed_path,
@@ -219,6 +231,58 @@ class AudioTranscriberPipeline:
                     "segments_count": len(primary_segments),
                     "output_file": primary_output
                 }
+                
+                # Step: Norwegian text normalization
+                logger.info("\nSTEP: Norwegian Text Normalization")
+                try:
+                    seg_dicts_for_norm = [
+                        {
+                            "id": s.id,
+                            "start": s.start,
+                            "end": s.end,
+                            "text": s.text,
+                            "speaker": s.speaker,
+                            "words": s.words,
+                            "confidence": s.confidence,
+                            "avg_logprob": s.avg_logprob,
+                            "no_speech_prob": s.no_speech_prob,
+                            "compression_ratio": s.compression_ratio,
+                            "temperature": s.temperature,
+                        }
+                        for s in primary_segments
+                    ]
+                    normalized_segments, norm_corrections = normalize_transcription_segments(seg_dicts_for_norm)
+                    
+                    # Update primary_segments with normalized text
+                    for i, seg in enumerate(primary_segments):
+                        seg.text = normalized_segments[i]["text"]
+                    
+                    # Regenerate SRT with normalized text
+                    if primary_output and primary_output.endswith('.srt'):
+                        try:
+                            from src.transcribe import _segments_to_srt
+                            srt_text = _segments_to_srt(primary_segments)
+                            with open(primary_output, "w", encoding="utf-8") as f:
+                                f.write(srt_text)
+                            logger.info(f"SRT regenerated with normalized text: {primary_output}")
+                        except Exception as srt_err:
+                            logger.warning(f"Failed to regenerate SRT: {srt_err}")
+                    
+                    # Export normalization report
+                    if norm_corrections:
+                        norm_report_path = file_output_dir / f"{file_path.stem}_normalization_report.txt"
+                        export_normalization_report(norm_corrections, norm_report_path)
+                        results["steps"]["normalization"] = {
+                            "status": "complete",
+                            "issues_flagged": len(norm_corrections),
+                            "report": str(norm_report_path),
+                        }
+                        logger.info(f"Normalization report exported: {norm_report_path}")
+                    else:
+                        results["steps"]["normalization"] = {"status": "complete", "issues_flagged": 0}
+                except Exception as norm_err:
+                    logger.warning(f"Normalization failed: {norm_err}")
+                    results["steps"]["normalization"] = {"status": "failed", "error": str(norm_err)}
                 
                 # Step: Confidence-flagging for review prioritization
                 logger.info("\nSTEP: Confidence Flagging")
@@ -251,10 +315,17 @@ class AudioTranscriberPipeline:
                     review_path = file_output_dir / f"{file_path.stem}_review_list.txt"
                     from src.confidence import ConfidenceExtractor
                     extractor = ConfidenceExtractor(confidence_config)
-                    extractor.export_review_list(confidence_segments, review_path, top_n=20)
+                    # Use config for review list settings (null top_n = export all)
+                    top_n = confidence_config.get("review_list_top_n")
+                    export_json = confidence_config.get("review_list_export_json", True)
+                    extractor.export_review_list(
+                        confidence_segments, review_path,
+                        top_n=top_n, export_all=export_json
+                    )
                     results["steps"]["confidence"] = {
                         "status": "complete",
                         "segments_flagged": len([s for s in confidence_segments if s.flags]),
+                        "total_segments": len(confidence_segments),
                         "review_list": str(review_path),
                     }
                     logger.info(f"Confidence review list exported: {review_path}")

@@ -9,6 +9,7 @@ segments for manual review. Signals are ranked by usefulness:
    compression_ratio, temperature)
 3. Cross-model disagreement (from compare.py)
 4. Acoustic features from analyze.py (SNR, VAD overlap)
+5. Norwegian-specific hard-rules (repetition, English words, duration, etc.)
 
 Phase A (current): Unweighted normalized priority score for ranking.
 Phase B (future): Calibrate against ground-truth using logistic regression.
@@ -18,15 +19,24 @@ errors but misses "confidently wrong" errors — especially plausible substituti
 of names and numbers. These get high decoder confidence because they are
 linguistically plausible. Therefore: confidence is a supplement, not a
 replacement. Proper nouns and numbers should be reviewed regardless of score.
+
+Norwegian-specific hard-rules (v0.1.5+):
+- Repetition: 3+ repeated words or 2+ repeated phrases = likely hallucination
+- English words: common English words in Norwegian text = language confusion
+- Duration: segments <2s or >60s = likely segmentation error
+- Character patterns: "aa" not "å", "ae" not "æ", "oe" not "ø" = normalization issue
+- Punctuation: missing spaces after punctuation = formatting error
+- Unusual characters: symbols, emojis, mixed scripts = corruption
 """
 
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+import json
 import numpy as np
 
-from .utils import get_logger, save_json
+from .utils import get_logger, save_json, _NumpyEncoder
 
 logger = get_logger("confidence")
 
@@ -274,6 +284,114 @@ class ConfidenceExtractor:
                     flags.append("possible_proper_noun")
                     break  # flag once per segment
             
+            # 11. HARD RULE: Repetition — 3+ identical consecutive words = hallucination
+            # Whisper often gets stuck repeating words when uncertain
+            text_lower = seg.text.lower()
+            word_list = text_lower.split()
+            for w in set(word_list):
+                if word_list.count(w) >= 3:
+                    scores.append(0.6)
+                    flags.append("repeated_words")
+                    break
+            # Also check for repeated 2-word phrases
+            if len(word_list) >= 4:
+                bigrams = [f"{word_list[i]} {word_list[i+1]}" for i in range(len(word_list)-1)]
+                for bg in set(bigrams):
+                    if bigrams.count(bg) >= 2:
+                        scores.append(0.5)
+                        flags.append("repeated_phrases")
+                        break
+            
+            # 12. HARD RULE: English words in Norwegian text = language confusion
+            # Common English words that Whisper might insert
+            common_english = {
+                'the', 'and', 'you', 'that', 'have', 'for', 'not', 'with',
+                'his', 'they', 'say', 'her', 'she', 'will', 'one', 'all',
+                'would', 'there', 'their', 'what', 'about', 'which', 'when',
+                'make', 'like', 'time', 'just', 'know', 'take', 'people',
+                'year', 'good', 'some', 'come', 'could', 'state', 'only',
+                'other', 'new', 'may', 'way', 'use', 'her', 'than',
+                'first', 'water', 'been', 'call', 'who', 'oil', 'its',
+                'now', 'find', 'long', 'down', 'day', 'did', 'get', 'has',
+                'him', 'how', 'man', 'more', 'much', 'no', 'way', 'too',
+                'very', 'what', 'who', 'why', 'yes', 'ok', 'okay', 'hello',
+                'hi', 'bye', 'thanks', 'please', 'sorry', 'yes', 'no'
+            }
+            english_words_found = [w for w in word_list if w in common_english]
+            if english_words_found:
+                scores.append(min(0.5, 0.15 * len(english_words_found)))
+                flags.append(f"english_words:{','.join(english_words_found[:3])}")
+            
+            # 13. HARD RULE: Duration heuristics
+            segment_duration = seg.end - seg.start
+            if segment_duration < 2.0:
+                scores.append(0.3)
+                flags.append("very_short_segment")
+            if segment_duration > 60.0:
+                scores.append(0.4)
+                flags.append("very_long_segment")
+            
+            # 14. HARD RULE: Word count heuristics
+            word_count = len(words)
+            if word_count < 3:
+                scores.append(0.2)
+                flags.append("very_few_words")
+            if word_count > 50:
+                scores.append(0.3)
+                flags.append("very_many_words")
+            
+            # 15. HARD RULE: Norwegian normalization issues
+            # "aa" should be "å", "ae" should be "æ", "oe" should be "ø"
+            # These are common Whisper errors on Norwegian
+            if re.search(r'\baa\b', seg.text.lower()):
+                scores.append(0.25)
+                flags.append("possible_aa_not_aa")
+            if re.search(r'\bae\b', seg.text.lower()):
+                scores.append(0.25)
+                flags.append("possible_ae_not_ae")
+            if re.search(r'\boe\b', seg.text.lower()):
+                scores.append(0.25)
+                flags.append("possible_oe_not_oe")
+            
+            # 16. HARD RULE: Formatting issues
+            # Missing space after punctuation (e.g., "ja,men")
+            if re.search(r'[.,;:!?][a-zA-ZæøåÆØÅ]', seg.text):
+                scores.append(0.2)
+                flags.append("missing_space_after_punct")
+            
+            # 17. HARD RULE: Unusual characters
+            # Symbols, emojis, mixed scripts = corruption
+            if re.search(r'[^\w\sæøåÆØÅ.,;:!?\-\'"()]', seg.text):
+                scores.append(0.4)
+                flags.append("unusual_characters")
+            
+            # 18. HARD RULE: Suspicious patterns
+            # "hæ" used as filler (common in Norwegian but often hallucinated)
+            hae_count = text_lower.count('hæ')
+            if hae_count >= 3:
+                scores.append(0.2)
+                flags.append("excessive_filler_hae")
+            
+            # "ja" repeated excessively
+            ja_count = text_lower.count(' ja ')
+            if ja_count >= 4:
+                scores.append(0.2)
+                flags.append("excessive_filler_ja")
+            
+            # 19. HARD RULE: Incomplete sentence ending
+            # Segment ending mid-word or with hyphen = likely truncation
+            if seg.text.endswith('-') or seg.text.endswith('…') or seg.text.endswith('...'):
+                scores.append(0.3)
+                flags.append("incomplete_ending")
+            
+            # 20. HARD RULE: All-lowercase segment (Norwegian uses sentence case)
+            # All lowercase might indicate Whisper uncertainty
+            if seg.text and seg.text[0].islower() and word_count > 2:
+                # Check if it's not a continuation
+                if not seg.text.startswith(('og ', 'men ', 'så ', 'ja ', 'nei ')):
+                    scores.append(0.15)
+                    flags.append("lowercase_start")
+            
             # Compute unweighted average priority
             if scores:
                 seg.priority_score = float(np.mean(scores))
@@ -293,7 +411,8 @@ class ConfidenceExtractor:
         self,
         segments: List[SegmentConfidence],
         output_path: Path,
-        top_n: Optional[int] = None
+        top_n: Optional[int] = None,
+        export_all: bool = True,
     ) -> Path:
         """
         Export a prioritized review list for manual correction.
@@ -301,23 +420,44 @@ class ConfidenceExtractor:
         Args:
             segments: List of SegmentConfidence with priority scores
             output_path: Where to save the review list
-            top_n: Only export top N segments (None = all)
+            top_n: Only export top N segments in the human-readable list (None = all)
+            export_all: Also export a JSON file with ALL segments and full signal data
         
         Returns:
             Path to exported review list
         """
-        if top_n:
-            segments = segments[:top_n]
+        # Human-readable review list (top N or all)
+        display_segments = segments[:top_n] if top_n else segments
         
         lines = [
             "=== PRIORITIZED REVIEW LIST ===",
             f"Total segments: {len(segments)}",
+            f"Displayed: {len(display_segments)}",
             "",
             "Review order: highest priority first",
             "",
         ]
         
+        # Add histogram
+        lines.append("=== PRIORITY HISTOGRAM ===")
+        bins = [(0.0, 0.2, "low"), (0.2, 0.4, "medium-low"), (0.4, 0.6, "medium"), 
+                (0.6, 0.8, "medium-high"), (0.8, 1.0, "high")]
+        for low, high, label in bins:
+            count = sum(1 for s in segments if low <= s.priority_score < high)
+            lines.append(f"  {label:12s} ({low:.1f}-{high:.1f}): {count} segments")
+        lines.append("")
+        
+        # Add flag distribution
+        lines.append("=== FLAG DISTRIBUTION ===")
+        all_flags = {}
         for seg in segments:
+            for flag in seg.flags:
+                all_flags[flag] = all_flags.get(flag, 0) + 1
+        for flag, count in sorted(all_flags.items(), key=lambda x: -x[1]):
+            lines.append(f"  {flag:30s}: {count}")
+        lines.append("")
+        
+        for seg in display_segments:
             lines.append(f"Rank {seg.priority_rank} | Priority: {seg.priority_score:.3f}")
             lines.append(f"Time: {seg.start:.1f}s - {seg.end:.1f}s")
             if seg.speaker:
@@ -332,6 +472,50 @@ class ConfidenceExtractor:
             f.write("\n".join(lines))
         
         logger.info(f"Review list exported to {output_path}")
+        
+        # Export ALL segments as JSON with full signal data
+        if export_all:
+            json_path = output_path.with_suffix(".json")
+            all_data = []
+            for seg in segments:
+                all_data.append({
+                    "segment_id": seg.segment_id,
+                    "start": seg.start,
+                    "end": seg.end,
+                    "text": seg.text,
+                    "speaker": seg.speaker,
+                    "priority_score": seg.priority_score,
+                    "priority_rank": seg.priority_rank,
+                    "flags": seg.flags,
+                    "signals": {
+                        "alignment_score": seg.alignment_score,
+                        "min_word_alignment_score": seg.min_word_alignment_score,
+                        "avg_logprob": seg.avg_logprob,
+                        "no_speech_prob": seg.no_speech_prob,
+                        "compression_ratio": seg.compression_ratio,
+                        "temperature": seg.temperature,
+                        "min_word_probability": seg.min_word_probability,
+                        "model_disagreement": seg.model_disagreement,
+                        "snr_db": seg.snr_db,
+                        "vad_overlap": seg.vad_overlap,
+                    }
+                })
+            
+            summary = {
+                "total_segments": len(segments),
+                "flagged_segments": len([s for s in segments if s.flags]),
+                "flag_distribution": all_flags,
+                "priority_histogram": {
+                    label: sum(1 for s in segments if low <= s.priority_score < high)
+                    for low, high, label in bins
+                },
+                "segments": all_data,
+            }
+            
+            with open(json_path, "w", encoding="utf-8") as f:
+                json.dump(summary, f, ensure_ascii=False, indent=2, cls=_NumpyEncoder)
+            logger.info(f"Full confidence data exported to {json_path}")
+        
         return output_path
 
 

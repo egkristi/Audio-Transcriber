@@ -47,9 +47,17 @@ transcription:
   condition_on_previous_text: true  # Use context from previous segments
   language: "no"  # Norwegian
   
-  # Confidence thresholds
-  low_confidence_threshold: 0.85
-  confidence_percentile: 50
+  # Confidence thresholds — AGGRESSIVE for maximum flagging without ground truth
+  low_confidence_threshold: 0.70  # Lower = flag more segments
+  confidence_percentile: 25       # Lower = flag more segments
+  alignment_threshold: 0.50        # Lower = flag more alignment issues
+  logprob_threshold: -0.3         # Higher = flag more low-confidence
+  no_speech_threshold: 0.3        # Lower = flag more hallucination risk
+  compression_threshold: 2.0     # Lower = flag more repetition
+  
+  # Review list settings
+  review_list_top_n: null        # null = export ALL segments (not just top 20)
+  review_list_export_json: true   # Export full signal data for analysis
 
 # Model Comparison Settings (Step 5)
 comparison:
