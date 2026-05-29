@@ -222,3 +222,28 @@ Produce a short written summary covering:
 - Anything you were unsure about or chose not to do, and why.
 
 If any operating principle in §8 was bent or violated during the session, state that at the top of the report.
+
+---
+
+## 17. Session Workflow (mandatory)
+
+At the start of every session, follow this sequence:
+
+1. **Read `ISSUES.md`** — identify any open issues.
+2. **Solve open issues** — work through them in priority order (§9). For each issue:
+   - Verify against code, not document claims.
+   - Apply fix; add/update tests; run `uv run pytest -q`.
+   - Update `ISSUES.md` status to Resolved with date and fix description.
+   - Update `CHANGELOG.md` with the change.
+   - Commit with conventional prefix (`fix:`, `feat:`, `docs:`, `test:`).
+   - Push to origin.
+3. **Read `ROADMAP.md`** — once all open issues are resolved, continue with ROADMAP work.
+   - Reconcile checkboxes against actual code (§12 checklist).
+   - Identify next items to implement or verify.
+4. **Identify new issues/features** during work:
+   - If a bug or gap is found, **add to `ISSUES.md` first** before declaring it addressed (§8.6).
+   - If a new feature is needed, **add to `ROADMAP.md`** under the appropriate phase.
+5. **Update `CHANGELOG.md`** for every new feature or change.
+6. **Commit and push** after each logical change. One change per commit. Never force-push.
+
+This workflow ensures the canonical trackers (`ISSUES.md`, `ROADMAP.md`, `CHANGELOG.md`) stay in sync with the code at all times.
