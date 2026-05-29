@@ -1,13 +1,13 @@
 # Audio-Transcriber — Omfattende Auditrapport
 **Dato:** 29. mai 2026  
-**Revisjon:** v0.1.4 (post-fix, etter testing på 410 ekte opptak)  
+**Revisjon:** v0.1.5 (post-fix, etter testing på 410 ekte opptak + Issue #4/#5/#9/#21 fixes)  
 **Auditor:** GitHub Copilot (kimi-k2.6:cloud)
 
 ---
 
 ## Sammendrag
 
-Prosjektet er nå **verifisert på ekte data**. Pipeline kjører end-to-end på reelle opptak og produserer gyldig SRT med norsk transkripsjon. 38 enhetstester passerer. Kritiske blocker-bugs (ffmpeg, JSON-serialisering, whisperx API-mismatch, VAD API, NaN i stereo, confidence priority all-zero) er løst.
+Prosjektet er nå **verifisert på ekte data**. Pipeline kjører end-to-end på reelle opptak og produserer gyldig SRT med norsk transkripsjon. 38 enhetstester passerer. Kritiske blocker-bugs (ffmpeg, JSON-serialisering, whisperx API-mismatch, VAD API, NaN i stereo, confidence priority all-zero) er løst. Ytterligere 4 issues (#4, #5, #9, #21) er løst i denne revisjonen.
 
 **Status etter siste kjøring (2026-05-29):**
 - 2 gyldige filer funnet (1 korrupt filtrert ut)
@@ -15,6 +15,7 @@ Prosjektet er nå **verifisert på ekte data**. Pipeline kjører end-to-end på 
 - File 2: 17 minutter, 35 segmenter, priority range 0.596–0.000
 - Confidence-flagging fungerer: `low_logprob` og `contains_numbers` flagg identifisert
 - Hard-rules fungerer: segment med "14 fot" korrekt flagget med `contains_numbers`
+- **Nytt i v0.1.5:** Pipeline kjørte uten diarization (--no-diarize) på File 1: 22 segmenter transkribert på ~4 minutter, review list eksportert med 20 flaggete segmenter
 
 **Gjenstående blocker:** Ground-truth fasit og WER-måling mangler fortsatt.
 
@@ -144,18 +145,18 @@ Prosjektet er nå **verifisert på ekte data**. Pipeline kjører end-to-end på 
 - **Prioritet:** 🟡 **LOW**
 
 ### M5: `compare.py` alignment er for simpel
-- **Status:** Issue #9 — Åpen
-- **Bevis:** `align_segments()` bruker kun tids-overlap >50%. Ingen ord-nivå WER-diff.
+- **Status:** ✅ Løst (2026-05-29) — Issue #9
+- **Bevis:** `align_segments()` brukte kun tids-overlap >50%. `calculate_similarity()` brukte `difflib.SequenceMatcher` på tegn-nivå.
 - **Impact:** Falske positive/negative i disagreement-deteksjon.
-- **Fix:** Bruk `jiwer.process_words()` for ord-nivå diff innenfor overlappende segmenter.
-- **Prioritet:** 🟡 **LOW**
+- **Fix:** `calculate_similarity()` bruker nå `jiwer.wer()` for ord-nivå WER-basert similarity når tilgjengelig, med fallback til `SequenceMatcher`. WER gir mer lingvistisk meningsfull sammenligning enn tegn-nivå matching.
+- **Prioritet:** 🟢 **LØST**
 
 ### M6: `config.yaml` `segmentation_model` ignoreres fullstendig
-- **Status:** Issue #4 — Åpen
-- **Bevis:** `config.yaml` har `diarization.segmentation_model: "pyannote/segmentation-3.0"`. `Diarizer._load_model()` leser kun `diarization.model` og aldri `segmentation_model`. pyannote 3.1 bundler egen segmentering.
-- **Impact:** Bruker kan ikke overstyre segmenteringsmodell. Feltet villeder.
-- **Fix:** Fjern feltet fra `config.yaml` og dokumenter at det ikke er konfigurerbart.
-- **Prioritet:** 🟡 **LOW**
+- **Status:** ✅ Løst (2026-05-29) — Issue #4
+- **Bevis:** `config.yaml` hadde `diarization.segmentation_model: "pyannote/segmentation-3.0"`. `Diarizer._load_model()` leste kun `diarization.model` og aldri `segmentation_model`. pyannote 3.1 bundler egen segmentering.
+- **Impact:** Bruker kunne ikke overstyre segmenteringsmodell. Feltet villedet.
+- **Fix:** Fjernet feltet fra `config.yaml` og la til kommentar som forklarer at pyannote 3.1 bundler sin egen segmenteringsmodell internt. La til inline-kommentar i `diarize.py` som refererer til ISSUES.md #4.
+- **Prioritet:** 🟢 **LØST**
 
 ---
 
@@ -200,7 +201,7 @@ Prosjektet er nå **verifisert på ekte data**. Pipeline kjører end-to-end på 
 | `ROADMAP.md` | ✅ Oppdatert | "Remaining" renset for løste items |
 | `ISSUES.md` | ✅ Oppdatert | Eneste sannhetskilde for status |
 | `REVIEW.md` | ✅ Oppdatert | Tier 1–5 prioritering |
-| `CHANGELOG.md` | ✅ Oppdatert | v0.1.0–v0.1.4 |
+| `CHANGELOG.md` | ✅ Oppdatert | v0.1.0–v0.1.5 |
 | `AUDIT.md` | ✅ Denne filen | Post-fix audit etter real-data-testing |
 | `.instructions.md` | ✅ Oppdatert | AI agent kontekst |
 
@@ -208,13 +209,12 @@ Prosjektet er nå **verifisert på ekte data**. Pipeline kjører end-to-end på 
 
 ---
 
-## Anbefalt rekkefølge (revidert etter real-data-testing)
+## Anbefalt rekkefølge (revidert etter v0.1.5)
 
 1. **🔴 Lag ground-truth fasit** — manuelt transkriber 5–10 min av ett gyldig opptak
 2. **🔴 Kjør pipeline + evaluate.py** — få første reelle WER-tall
-3. **� Fiks spell_check.py** — enten last ordbok eller fjern flagget
-4. **🟡 Fiks `segmentation_model` i config** — fjern eller dokumenter
-5. **🟡 Legg til integrasjonstest** — en end-to-end test på syntetisk lyd
+3. **🟡 Legg til integrasjonstest** — en end-to-end test på syntetisk lyd (mock whisperx)
+4. **🟡 Fiks `performance.device` i config** — fjern eller dokumenter at auto-deteksjon overstyres
 
 ---
 
@@ -222,9 +222,10 @@ Prosjektet er nå **verifisert på ekte data**. Pipeline kjører end-to-end på 
 
 Audio-Transcriber er nå **verifisert på ekte data** og **alle kritiske blocker-bugs er løst**. Kjerne-pipeline (analyse → forhåndsbehandling → transkripsjon) fungerer på reelle opptak og produserer gyldig SRT med norsk tekst.
 
+**v0.1.5 endringer:** Issues #4, #5, #9, #21 er løst. Stereo-splitting, jiwer WER-similarity, config-opprydding, og spell-check deaktivering er på plass.
+
 De gjenstående oppgavene er:
 1. **Operasjonelle:** Lag fasit + mål WER (den viktigste)
-2. **Features:** Fiks spell_check.py (krever norsk ordbok)
-3. **Teknisk gjeld:** Fjern ubrukte config-felter, legg til integrasjonstest
+2. **Teknisk gjeld:** Legg til integrasjonstest, fjern ubrukte config-felter
 
 **Prosjektet trenger nå mindre debugging og mer måling.**

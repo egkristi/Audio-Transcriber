@@ -86,6 +86,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+## [0.1.5] - 2026-05-29
+
+### Added
+- **Stereo channel splitting** (`src/preprocess.py`)
+  - `split_stereo_channels()` splits stereo audio into separate mono files per channel (`{stem}_ch0.wav`, `{stem}_ch1.wav`)
+  - `preprocess_audio()` detects `metadata.has_stereo_separation` and saves channel files when `output_dir` is provided
+  - `convert_to_mono()` now logs a warning when `has_stereo_separation=True` to alert that averaging mixes speakers
+- **Word-level WER similarity** (`src/compare.py`)
+  - `calculate_similarity()` now uses `jiwer.wer()` for word-level similarity when available
+  - Falls back to `SequenceMatcher` if jiwer fails
+  - More linguistically meaningful than character-level matching for transcription comparison
+
+### Changed
+- **Config cleanup** (`config.yaml`)
+  - Removed misleading `segmentation_model` field from `diarization` section
+  - Added comment explaining that pyannote/speaker-diarization-3.1 bundles its own segmentation model
+- **Spell-check honesty** (`src/spell_check.py`)
+  - `_init_symspell()` now explicitly disables spell-checking when no Norwegian dictionary is loaded
+  - Logs clear warning instead of silently doing nothing
+  - Added inline comment documenting why no dictionary is bundled (licensing restrictions)
+
+### Fixed
+- **Issue #4** (`src/diarize.py`, `config.yaml`): `segmentation_model` config field was dead code — pyannote 3.1 does not expose segmentation model configuration
+- **Issue #5** (`src/preprocess.py`): Stereo audio with one speaker per channel was averaged to mono without warning or channel splitting option
+- **Issue #9** (`src/compare.py`): Text similarity used character-level `SequenceMatcher` instead of word-level WER
+- **Issue #21** (`src/spell_check.py`): Spell-checking was non-functional because no Norwegian dictionary was loaded; now explicitly disabled with clear logging
+
 ## [0.1.4] - 2026-05-29
 
 ### Added
