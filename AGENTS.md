@@ -84,8 +84,8 @@ Wired into the pipeline, but two known gaps remain:
 - **Validation pending.** Priority ranking has never been compared to actual segment-WER. Cannot be done without fasit. First task once fasit exists: compute Spearman correlation or precision@k between priority score and per-segment WER.
 - **Hard-rules pending.** Segments containing digits or capitalized OOV tokens should always be flagged regardless of score — this covers "confidently wrong" failures that scores cannot see.
 
-### Recently resolved (per `CHANGELOG.md` v0.1.4–v0.1.6)
-#11, #12, #14, #15, #16, #17, #18, #19, #20, #21. See `ISSUES.md` for details.
+### Recently resolved (per `CHANGELOG.md` v0.1.4–v0.1.7)
+#11, #12, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29. See `ISSUES.md` for details.
 
 ---
 
@@ -93,12 +93,15 @@ Wired into the pipeline, but two known gaps remain:
 
 `ISSUES.md` is canonical for issue status. `README.md`, `ROADMAP.md`, and `AUDIT.md` may reference it but must not contradict it.
 
-**Drift currently in the repo (fix before any new feature work):**
-- `README.md` "Gjenstående" lists #14 as "designet og testet, men ikke wiret inn" — but #14 is resolved.
-- `ROADMAP.md` "Remaining" lists #11 — but #11 is resolved.
-- `ROADMAP.md` "Resolved (2026-05-28)" stops at #13. Missing: #11, #14, #15, #16, #17, #18, #19.
-- `README.md` batch example uses `--workers 4`, but default and recommendation is `1` (CPU-bound, GIL).
-- `AUDIT.md` claims "Ingen dokumentasjonsdrift oppdaget" — false. The items above prove it. **Treat audit summaries with the same skepticism as any other source.**
+**Drift history (all items below have been resolved as of 2026-05-29):**
+- ~~`README.md` "Gjenstående" listed #14 as "designet og testet, men ikke wiret inn" — but #14 is resolved.~~ ✅ Fixed.
+- ~~`ROADMAP.md` "Remaining" listed #11 — but #11 is resolved.~~ ✅ Fixed.
+- ~~`ROADMAP.md` "Resolved (2026-05-28)" stopped at #13. Missing: #11, #14, #15, #16, #17, #18, #19.~~ ✅ Fixed — now lists all issues through #29.
+- ~~`README.md` batch example used `--workers 4`, but default and recommendation is `1` (CPU-bound, GIL).~~ ✅ Fixed.
+- ~~`AUDIT.md` claimed "Ingen dokumentasjonsdrift oppdaget" — false.~~ ✅ Fixed.
+- **Note:** `AUDIT.md` claims about no drift were false at the time. Treat audit summaries with the same skepticism as any other source.
+
+**Current drift check (2026-05-29):** No drift detected between `ISSUES.md`, `README.md`, `ROADMAP.md`, and `CHANGELOG.md`. All resolved issues through #29 are correctly reflected across all documents. Verify with §12 before declaring session complete.
 
 ---
 
