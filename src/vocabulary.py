@@ -13,6 +13,37 @@ from .utils import get_logger, load_json, save_json
 
 logger = get_logger("vocabulary")
 
+# Whisper's initial_prompt hard limit (tokens)
+_WHISPER_PROMPT_TOKEN_LIMIT = 224
+# Conservative default to stay well under the limit
+_DEFAULT_MAX_TOKENS = 150
+
+# Module-level cache for the Whisper tokenizer
+_tokenizer = None
+
+
+def _get_tokenizer():
+    """Lazy-load and cache the Whisper tokenizer for accurate token counting."""
+    global _tokenizer
+    if _tokenizer is None:
+        try:
+            from transformers import AutoTokenizer
+            _tokenizer = AutoTokenizer.from_pretrained("openai/whisper-tiny")
+            logger.debug("Loaded Whisper tokenizer for vocabulary token counting")
+        except Exception as e:
+            logger.warning(f"Could not load Whisper tokenizer: {e}. Falling back to conservative word-count estimate.")
+            _tokenizer = False  # sentinel: tried and failed
+    return _tokenizer if _tokenizer is not False else None
+
+
+def count_tokens(text: str) -> int:
+    """Count tokens in text using the Whisper tokenizer if available."""
+    tokenizer = _get_tokenizer()
+    if tokenizer is not None:
+        return len(tokenizer.encode(text, add_special_tokens=False))
+    # Conservative fallback: ~1.5 tokens per word (better than naive 2)
+    return int(len(text.split()) * 1.5)
+
 
 class VocabularyManager:
     """Manages custom vocabulary for transcription."""
@@ -81,53 +112,71 @@ class VocabularyManager:
     
     def generate_initial_prompt(
         self,
-        max_tokens: int = 100,
+        max_tokens: int = _DEFAULT_MAX_TOKENS,
         include_contexts: bool = True
     ) -> str:
         """
         Generate initial prompt for Whisper from vocabulary.
-        
+
         Whisper's initial_prompt helps improve recognition of specific words.
-        
+        The 224-token hard limit is enforced; if the tokenizer is unavailable,
+        a conservative fallback estimate is used.
+
         Args:
-            max_tokens: Maximum tokens in prompt
+            max_tokens: Maximum tokens in prompt (default 150, well under 224)
             include_contexts: Include context in prompt
-            
+
         Returns:
             Initial prompt string
         """
         prompt_parts = []
         token_count = 0
-        
+
         # Sort by context availability (with context first)
         sorted_words = sorted(
             self.vocabulary.items(),
             key=lambda x: len(x[1]) if x[1] else 0,
             reverse=True
         )
-        
+
         for word, context in sorted_words:
             if token_count >= max_tokens:
                 break
-            
+
             if include_contexts and context and context.strip():
                 # Format: "word (context)"
                 item = f"{word} ({context})"
             else:
                 item = word
-            
+
+            item_tokens = count_tokens(item)
+            # +1 for the comma separator that will be added
+            projected = token_count + item_tokens + (1 if prompt_parts else 0)
+            if projected > max_tokens:
+                break
+
             prompt_parts.append(item)
-            # Rough estimate: 2 tokens per word
-            token_count += len(item.split()) * 2
-        
+            token_count = projected
+
         if not prompt_parts:
             return ""
-        
+
         # Create prompt string
         prompt = "Vocabulary: " + ", ".join(prompt_parts)
-        
-        logger.info(f"Generated initial prompt ({token_count} tokens, {len(prompt_parts)} items)")
-        
+
+        # Final accurate count
+        final_tokens = count_tokens(prompt)
+        logger.info(
+            f"Generated initial prompt ({final_tokens} tokens, {len(prompt_parts)} items). "
+            f"Limit: {max_tokens} / hard cap {_WHISPER_PROMPT_TOKEN_LIMIT}"
+        )
+
+        if final_tokens > _WHISPER_PROMPT_TOKEN_LIMIT:
+            logger.warning(
+                f"Prompt exceeds Whisper 224-token hard limit ({final_tokens} tokens). "
+                f"Reduce vocabulary or set max_tokens lower."
+            )
+
         return prompt
     
     def get_vocabulary_for_transcription(

@@ -177,10 +177,14 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 
 ### #23: `vocabulary.py` token estimate is BPE-naive — risks silent prompt truncation
 - **File:** `src/vocabulary.py`
-- **Status:** Open
-- **Description:** `generate_initial_prompt()` estimates "2 tokens per word". Whisper uses BPE — common words can be 1 token, rare compound words 3–5 tokens. `max_tokens=100` is hardcoded. The 224-token `initial_prompt` limit can be silently exceeded.
+- **Status:** Resolved (2026-05-29)
+- **Description:** `generate_initial_prompt()` estimated "2 tokens per word". Whisper uses BPE — common words can be 1 token, rare compound words 3–5 tokens. `max_tokens=100` was hardcoded. The 224-token `initial_prompt` limit could be silently exceeded.
 - **Impact:** Vocabulary injection may be truncated without warning, reducing effectiveness.
-- **Fix:** Use `transformers.AutoTokenizer` for actual token counting, or set a conservative limit (~150 tokens) and document.
+- **Fix:** 
+  1. Added `_get_tokenizer()` helper that lazily loads `transformers.AutoTokenizer` from `openai/whisper-tiny` for accurate token counting.
+  2. `count_tokens()` uses the tokenizer when available; falls back to a conservative 1.5 tokens/word estimate if unavailable.
+  3. `generate_initial_prompt()` default changed from 100 to 150 tokens (still well under 224), and now checks each item's actual token count before adding it.
+  4. Final prompt is checked against the 224-token hard limit; warning logged if exceeded.
 - **Reference:** AUDIT.md H4
 
 ### #24: Implicit dependencies (`symspellpy`, `soundfile`) not pinned in `pyproject.toml`
