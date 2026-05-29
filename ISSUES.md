@@ -214,7 +214,31 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 - **Fix:** `check_hf_auth()` now calls `huggingface_hub.whoami(token=token)` to verify token validity before returning True. Logs clear error if token is invalid.
 - **Reference:** AUDIT.md M4
 
+### #27: `src/normalize.py` missing `Path` import — runtime NameError
+- **File:** `src/normalize.py`
+- **Status:** Resolved (2026-05-29)
+- **Description:** `export_normalization_report()` used `Path` in its signature but `from pathlib import Path` was missing. This caused `NameError: name 'Path' is not defined` when the pipeline attempted to import the module.
+- **Impact:** Pipeline crashed on startup when `normalize.py` was imported.
+- **Fix:** Added `from pathlib import Path` to imports.
+- **Discovered during:** Real pipeline test run (2026-05-29).
+
+### #28: `scripts/run_pipeline.py` missing `numpy` import — runtime NameError
+- **File:** `scripts/run_pipeline.py`
+- **Status:** Resolved (2026-05-29)
+- **Description:** `process_single_file()` called `np.mean(segment_confidences)` but `import numpy as np` was missing. This caused `NameError: name 'np' is not defined` after transcription completed.
+- **Impact:** Pipeline crashed after successful transcription, preventing review list generation and output saving.
+- **Fix:** Added `import numpy as np` at the top of the file.
+- **Discovered during:** Real pipeline test run (2026-05-29).
+
+### #29: `src/diarize.py` uses deprecated `use_auth_token` parameter
+- **File:** `src/diarize.py`
+- **Status:** Resolved (2026-05-29)
+- **Description:** `Pipeline.from_pretrained()` was called with `use_auth_token=True`, but newer versions of `pyannote.audio` / `huggingface_hub` expect `token=True`.
+- **Impact:** `TypeError: Pipeline.from_pretrained() got an unexpected keyword argument 'use_auth_token'`.
+- **Fix:** Changed `use_auth_token=True` to `token=True`.
+- **Discovered during:** Real pipeline test run (2026-05-29).
+
 ## Resolved
 
-- #1, #2, #3, #4, #5, #6, #7, #9, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26
+- #1, #2, #3, #4, #5, #6, #7, #9, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29
 - See individual issue entries above for details.
