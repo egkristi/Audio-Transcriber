@@ -42,6 +42,7 @@ Denne repoen inneholder en fungerende proof-of-concept pipeline med de viktigste
 - ✅ Per-segment og per-file confidence levels implementert.
 - ✅ Norsk tekst-normalisering (`src/normalize.py`) med automatisk SRT-regenerering.
 - ✅ Default norsk vokabular (`data/norwegian_vocabulary.json`) auto-lastet for `initial_prompt`.
+- ✅ Dialekt-adaptivt vokabular (`--dialect northern_norwegian`) — 30+ nordnorske ord injiseres i Whisper `initial_prompt` for bedre gjenkjenning av dialektformer.
 
 ### Gjenstående
 Se `ISSUES.md` for fullstendig og oppdatert liste over åpne og løste problemer. Nedenfor er et sammendrag:
@@ -96,6 +97,15 @@ uv run python scripts/run_pipeline.py \
   --diarize \
   --compare-models \
   --workers 1
+```
+
+### Kjør med dialektvokabular (nordnorsk)
+
+```bash
+uv run python scripts/run_pipeline.py \
+  --input recording.m4a \
+  --output-dir ./output \
+  --dialect northern_norwegian
 ```
 
 ### Kjør enkeltsteg

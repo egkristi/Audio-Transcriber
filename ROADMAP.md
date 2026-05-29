@@ -126,7 +126,7 @@ Real pipeline execution on `testdata/Call recording Elida Anna Wiktoria Kristian
 ### Remaining (as of 2026-05-29)
 - **#8:** `editor.py` er fortsatt placeholder — korrekt parkert, Subtitle Edit dekker behovet
 - Ingen CI-pipeline — over-scope for personlig verktøy
-- **Dialektgjenkjenning:** Grunnleggende nordnorsk dialekt-flagg er implementert i `normalize.py` (se Phase 8). Gjenstående: dialekt-adaptiv vokabularinjeksjon, finjustert modell for nordnorsk, multi-dialekt-støtte, dialekt-konfidensskåring, og dialekt-bevarende output.
+- **Dialektgjenkjenning:** Grunnleggende nordnorsk dialekt-flagg i `normalize.py` og dialekt-adaptiv vokabularinjeksjon i `vocabulary.py` (via `--dialect northern_norwegian`) er implementert. Gjenstående: finjustert modell for nordnorsk, multi-dialekt-støtte, dialekt-konfidensskåring, og dialekt-bevarende output.
 - **Spell-checking:** Featuren er deaktivert inntil en norsk ordbok lastes inn (ISSUES.md #21 er løst — honest failure — men selve funksjonaliteten krever fortsatt ekstern ordbok)
 - **HF gated repo access:** `pyannote/speaker-diarization-3.1` krever eksplisitt aksept på huggingface.co. Token validerer, men brukeren er ikke i autorisert liste. Bruk `--no-diarize` inntil tilgang er gitt.
 
