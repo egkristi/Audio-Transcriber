@@ -65,8 +65,6 @@ These are constraints of the environment and will not change soon:
 
 ### Open issues tracked in `ISSUES.md`
 - **#8** `editor.py` is a placeholder — correctly parked (Subtitle Edit covers the need)
-- **#22** `preprocess.py` loads audio twice — cache audio_data or pass explicitly from analyze to preprocess
-- **#23** `vocabulary.py` token estimate is BPE-naive — risks silent `initial_prompt` truncation
 - **#25** `pydub` uses deprecated `audioop` — Python 3.13 time bomb
 
 ### Resolved issues (still worth knowing about)
@@ -74,6 +72,8 @@ These are constraints of the environment and will not change soon:
 - **#5** Stereo channel-splitting implemented (`split_stereo_channels()`), but pipeline still processes averaged mono. Full channel-aware orchestration is future work.
 - **#9** `compare.py` now uses `jiwer.wer()` for word-level similarity — time-overlap alignment remains appropriate for segment-level pairing
 - **#21** `spell_check.py` explicitly disabled when no dictionary loaded — honest failure instead of silent no-op
+- **#22** `preprocess.py` no longer loads audio twice — `AudioMetadata.audio_data` caches the loaded array (ephemeral, excluded from JSON)
+- **#23** `vocabulary.py` now uses `transformers.AutoTokenizer` for accurate token counting; default `max_tokens=150` stays well under Whisper's 224-token limit
 
 ### Critique of AUDIT.md fixes worth knowing
 - **K1 fix (skip files < 1 KB) is a weak heuristic.** `moov atom not found` can occur on larger corrupted files too. A more robust fix is per-file ffprobe error handling that skips on failure rather than relying on size. Track as a follow-up.

@@ -93,6 +93,10 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 - ✅ Issue #19 — beam size increased to 10
 - ✅ Issue #20 — decoder signals passed to confidence extractor
 - ✅ Issue #21 — spell-check deaktivert når ordbok mangler (honest failure)
+- ✅ Issue #22 — audio data caching mellom analyze og preprocess (unngår dobbel lasting)
+- ✅ Issue #23 — nøyaktig token-telling i vocabulary.py med Whisper tokenizer
+- ✅ Issue #24 — eksplisitte avhengigheter i pyproject.toml (symspellpy, soundfile)
+- ✅ Issue #26 — HF token validering med whoami()
 
 ### Remaining (as of 2026-05-29)
 - **#8:** `editor.py` er fortsatt placeholder — korrekt parkert, Subtitle Edit dekker behovet

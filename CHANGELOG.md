@@ -17,7 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **README.md** — updated "Løst" section with all resolved items through v0.1.6; fixed batch example to use `--workers 1` instead of `--workers 4`.
-- **AGENTS.md** — updated §6 Current Reality with new open issues (#22–#26) and resolved issues (#4, #5, #9, #21).
+- **AGENTS.md** — updated §6 Current Reality with new open issues (#22–#26) and resolved issues (#4, #5, #9, #21). Later updated to mark #22 and #23 as resolved.
+- **ROADMAP.md** — "Resolved" section now includes all resolved issues through #26.
 
 ### Fixed
 - **Documentation drift** (AGENTS.md §7 / AUDIT.md drift list):
