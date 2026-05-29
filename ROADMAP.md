@@ -53,6 +53,7 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 - [x] Proper stereo handling for one-speaker-per-channel audio (channel splitting implemented, full pipeline integration pending)
 - [x] More robust alignment and diffing beyond simple overlap / SequenceMatcher (jiwer WER-based similarity)
 - [x] Full audit logging / job tracking using SQLite or JSON logs (basic integration via `--use-database`)
+- [x] **Speaker diarization integration** (`src/diarize.py` + `src/transcribe.py`) — pyannote/speaker-diarization-3.1 for speaker separation; `align_with_diarization()` assigns `SPEAKER_00`, `SPEAKER_01`, etc. to each transcription segment; SRT/JSON/VTT output includes inline speaker labels. Configurable via `config.yaml` (`min_speakers`, `max_speakers`). **Status: implemented, needs real-data verification.**
 - [ ] True editor UI with waveform and speaker-aware review
 
 ### Phase 6: Optimization
@@ -106,7 +107,8 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 4. **Issue #6 (vocabulary via `initial_prompt`)** — høyest ROI for nøyaktighet. ✅ Integrert.
 5. **Issue #3** — HF-auth-helper. ✅ Løst.
 6. **Issue #10 (device auto-detection)** — `cuda` for transkripsjon, `cuda`/`mps` for diarization. ✅ Løst.
-7. **Mål, mål, mål** — kjør WER mot fasiten for hver endring.
+7. **Speaker diarization verification** — `src/diarize.py` er implementert med pyannote/speaker-diarization-3.1, og `src/transcribe.py` har `align_with_diarization()` som tildeler `SPEAKER_00`, `SPEAKER_01`, etc. til hvert segment. SRT/JSON/VTT-output inkluderer inline speaker labels. **Må verifiseres på ekte data** for å bekrefte at tildelingen er korrekt (spesielt ved kryssprat og overlap). CLI-støtte for `--min-speakers` / `--max-speakers` er ønskelig for å låse antall talere på 2 for telefonsamtaler.
+8. **Mål, mål, mål** — kjør WER mot fasiten for hver endring.
 
 ### Utsettes / droppes (over-scope for personlig verktøy)
 - Web-editor (#8) — Subtitle Edit dekker behovet
