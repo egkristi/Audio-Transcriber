@@ -86,6 +86,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+## [0.1.6] - 2026-05-29
+
+### Added
+- **Aggressive Norwegian hard-rules** (`src/confidence.py`) — 20 rules for maximum error detection without ground truth:
+  - Repetition: 3+ repeated words or 2+ repeated phrases = hallucination flag
+  - English words: 50+ common English words detected in Norwegian text
+  - Duration: segments <2s or >60s flagged as segmentation errors
+  - Word count: <3 or >50 words flagged
+  - Norwegian char patterns: "aa"→"å", "ae"→"æ", "oe"→"ø" substitution flags
+  - Formatting: missing spaces after punctuation
+  - Unusual characters: symbols, emojis, mixed scripts
+  - Excessive fillers: "hæ" ≥3 times, " ja " ≥4 times
+  - Incomplete endings: trailing hyphen or ellipsis
+  - Lowercase starts: segments not starting with capital letter
+- **Enhanced review list export** (`src/confidence.py`)
+  - Exports ALL segments (not just top 20) when `review_list_top_n: null`
+  - Full signal data exported as JSON with histogram and flag distribution
+  - Human-readable report with priority histogram and flag breakdown
+- **Norwegian text normalization** (`src/normalize.py`)
+  - Fixes missing spaces after punctuation
+  - Flags character substitutions (aa/ae/oe)
+  - Flags English words with Norwegian suggestions
+  - Flags excessive repetition and short segments
+  - Exports normalization report per file
+  - Regenerates SRT with normalized text
+- **Default Norwegian vocabulary** (`data/norwegian_vocabulary.json`)
+  - 100+ Norwegian places, names, institutions, companies, political parties
+  - Auto-loaded into Whisper `initial_prompt` for better recognition
+  - `vocabulary.py` loads default vocab automatically when no custom file provided
+
+### Changed
+- **Aggressive config thresholds** (`config.yaml`)
+  - `low_confidence_threshold`: 0.85 → 0.70 (flags more segments)
+  - `logprob_threshold`: -0.5 → -0.3 (flags more low-confidence)
+  - `no_speech_threshold`: 0.5 → 0.3 (flags more hallucination risk)
+  - `compression_threshold`: 2.4 → 2.0 (flags more repetition)
+  - `review_list_top_n`: 20 → null (exports ALL segments)
+  - `review_list_export_json`: true (full signal data)
+- **Pipeline integration** (`scripts/run_pipeline.py`)
+  - Normalization step runs automatically after transcription
+  - SRT regenerated with normalized text
+  - Default Norwegian vocabulary auto-loaded for `initial_prompt`
+
 ## [0.1.5] - 2026-05-29
 
 ### Added

@@ -1,0 +1,17 @@
+{
+  "file_path": "testdata/Call recording Elida Anna Wiktoria Kristiansen_250923_040529.m4a",
+  "file_name": "Call recording Elida Anna Wiktoria Kristiansen_250923_040529.m4a",
+  "file_size_mb": 10.55594253540039,
+  "duration_seconds": 683.210667,
+  "sample_rate": 48000,
+  "channels": 1,
+  "bit_rate_kbps": 129,
+  "codec": "aac",
+  "bandwidth_type": "fullband",
+  "has_stereo_separation": false,
+  "language": "no",
+  "has_speech": true,
+  "loudness_lufs": -25.316698275121336,
+  "peak_db": -3.638441324234009,
+  "dynamic_range_db": 27.206287384033203
+}

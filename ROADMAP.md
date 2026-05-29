@@ -40,12 +40,14 @@ This roadmap reflects the existing implementation, identified gaps from the audi
   - faster-whisper decoder signals: `avg_logprob`, `no_speech_prob`, `compression_ratio`, `temperature`, `word.probability`
   - Cross-model disagreement from `compare.py`
   - Acoustic features from `analyze.py`: SNR, VAD overlap
-  - **Hard-rules for high-risk content:** numbers and proper nouns always flagged regardless of decoder score
-  - Auto-exports `*_review_list.txt` with top 20 flagged segments after each transcription
+  - **20 hard-rules for high-risk content:** numbers, proper nouns, repetition, English words, duration, word count, Norwegian char patterns (aa/ae/oe), formatting, unusual characters, incomplete endings, lowercase starts, excessive fillers
+  - Auto-exports `*_review_list.txt` with ALL segments + `*_review_list.json` with full signal data
+  - Priority histogram and flag distribution in review list
   - Future: calibrate priority scores against ground-truth using logistic regression
 - [x] Norwegian spell-checking integration in pipeline (basic integration via `--spell-check`)
   - **Honest limitation:** No Norwegian dictionary is bundled due to licensing. Spell-checking is disabled until a dictionary is provided. See ISSUES.md #21.
-- [x] Automatic `initial_prompt` / vocabulary injection for Whisper (via `--vocabulary-file`)
+- [x] Automatic `initial_prompt` / vocabulary injection for Whisper (via `--vocabulary-file` or default Norwegian vocabulary)
+- [x] **Norwegian text normalization** (`src/normalize.py`) — fixes spacing, flags char substitutions, English words, repetition, short segments; exports normalization report; regenerates SRT
 - [x] Proper stereo handling for one-speaker-per-channel audio (channel splitting implemented, full pipeline integration pending)
 - [x] More robust alignment and diffing beyond simple overlap / SequenceMatcher (jiwer WER-based similarity)
 - [x] Full audit logging / job tracking using SQLite or JSON logs (basic integration via `--use-database`)
