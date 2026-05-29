@@ -141,7 +141,14 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 - **Impact:** Suboptimal transcription accuracy, especially for rare words and names.
 - **Fix:** Increased `beam_size` from 5 to 10. Best-of remains 5. This is a quality/speed tradeoff appropriate for a verbatim model.
 
+### #20: Confidence priority scores all zero — decoder signals not passed to extractor
+- **File:** `src/transcribe.py`, `scripts/run_pipeline.py`
+- **Status:** Resolved (2026-05-29)
+- **Description:** `TranscriptionSegment` dataclass did not include `avg_logprob`, `no_speech_prob`, `compression_ratio`, `temperature` fields. Pipeline passed segments to confidence extractor without these decoder signals, resulting in all priority scores being 0.000.
+- **Impact:** Review list was useless — no segments were prioritized; all had equal priority.
+- **Fix:** Added decoder signal fields to `TranscriptionSegment` dataclass. Updated pipeline to pass these signals through to `extract_confidence_signals()`. Added hard-rules for numbers and proper nouns as fallback when decoder signals are weak.
+
 ## Resolved
 
-- #1, #2, #3, #6, #7, #11, #12, #13, #14, #15, #16, #17, #18, #19
+- #1, #2, #3, #6, #7, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20
 - See individual issue entries above for details.

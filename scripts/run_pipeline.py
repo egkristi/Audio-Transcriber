@@ -232,6 +232,10 @@ class AudioTranscriberPipeline:
                             "speaker": s.speaker,
                             "words": s.words,
                             "confidence": s.confidence,
+                            "avg_logprob": s.avg_logprob,
+                            "no_speech_prob": s.no_speech_prob,
+                            "compression_ratio": s.compression_ratio,
+                            "temperature": s.temperature,
                         }
                         for s in primary_segments
                     ]

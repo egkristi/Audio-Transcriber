@@ -38,6 +38,10 @@ class TranscriptionSegment:
     speaker: Optional[str] = None  # From diarization
     words: Optional[List[Dict]] = None  # Word-level timestamps
     confidence: float = 1.0
+    avg_logprob: Optional[float] = None  # Decoder confidence from faster-whisper
+    no_speech_prob: Optional[float] = None
+    compression_ratio: Optional[float] = None
+    temperature: Optional[float] = None
 
 
 class Transcriber:
@@ -164,7 +168,11 @@ class Transcriber:
                     end=seg["end"],
                     text=seg["text"].strip(),
                     words=seg.get("words"),
-                    confidence=seg.get("confidence", 1.0)
+                    confidence=seg.get("confidence", 1.0),
+                    avg_logprob=seg.get("avg_logprob"),
+                    no_speech_prob=seg.get("no_speech_prob"),
+                    compression_ratio=seg.get("compression_ratio"),
+                    temperature=seg.get("temperature"),
                 )
                 segments.append(segment)
             

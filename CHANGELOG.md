@@ -93,12 +93,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Automatic confidence extraction after every transcription
   - Exports `*_review_list.txt` with top 20 flagged segments for manual review
   - Integrates decoder signals, acoustic features, and metadata
+- **Hard-rules for high-risk content** (`src/confidence.py`)
+  - Numbers: always flagged regardless of decoder confidence (WhisperX alignment is weak for numeric tokens)
+  - Proper nouns: capitalized words (not sentence-start) always flagged — catches "confidently wrong" name substitutions
 - **Corrupted file filtering** (`scripts/run_pipeline.py`)
   - `_find_audio_files()` skips files smaller than 1KB (likely corrupted)
   - Logs count of skipped files
 - **Language detection confidence threshold** (`src/analyze.py`)
   - Falls back to "no" (Norwegian) when `language_probability < 0.5`
   - Prevents false "et" (Estonian) detections on Norwegian speech
+- **Decoder signals passed through pipeline** (`src/transcribe.py`, `scripts/run_pipeline.py`)
+  - `avg_logprob`, `no_speech_prob`, `compression_ratio`, `temperature` now flow from transcription to confidence scoring
 
 ### Changed
 - **Loudness target** (`config.yaml`): `-16 LUFS` → `-20 LUFS` for high-dynamic-range recordings
@@ -109,6 +114,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Loudness clipping** (`src/preprocess.py`): Gain is now capped so peak never exceeds 1.0 (pre-clipping instead of post-clipping)
 - **Language detection false positives** (`src/analyze.py`): Tiny model no longer trusted for low-confidence detections
+- **Confidence priority all-zero** (`src/transcribe.py`, `scripts/run_pipeline.py`): Decoder signals were not passed from transcription to confidence extractor
 
 ## [0.1.3] - 2026-05-28
 

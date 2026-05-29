@@ -258,6 +258,22 @@ class ConfidenceExtractor:
                 if seg.snr_db < 10.0:
                     flags.append("low_snr")
             
+            # 9. HARD RULE: Numbers — always flag regardless of score
+            # WhisperX alignment is weak for numeric tokens; these are high-risk
+            import re
+            if re.search(r'\d', seg.text):
+                scores.append(0.5)  # moderate boost
+                flags.append("contains_numbers")
+            
+            # 10. HARD RULE: Proper nouns (capitalized words not at sentence start)
+            # These are often "confidently wrong" — high decoder score but wrong name
+            words = seg.text.split()
+            for i, word in enumerate(words):
+                if len(word) > 1 and word[0].isupper() and i > 0:
+                    scores.append(0.3)  # small boost per proper noun
+                    flags.append("possible_proper_noun")
+                    break  # flag once per segment
+            
             # Compute unweighted average priority
             if scores:
                 seg.priority_score = float(np.mean(scores))

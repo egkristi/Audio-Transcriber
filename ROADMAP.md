@@ -35,11 +35,13 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 - [ ] VAD configuration and actual model selection should be hardened
 
 ### Phase 5: Feature gap closing
-- [~] **Word-level confidence-based review filtering** — `src/confidence.py` stub created; signals defined but not yet wired into pipeline
+- [x] **Word-level confidence-based review filtering** — `src/confidence.py` implemented and wired into pipeline
   - WhisperX alignment score (acoustic confidence)
   - faster-whisper decoder signals: `avg_logprob`, `no_speech_prob`, `compression_ratio`, `temperature`, `word.probability`
   - Cross-model disagreement from `compare.py`
   - Acoustic features from `analyze.py`: SNR, VAD overlap
+  - **Hard-rules for high-risk content:** numbers and proper nouns always flagged regardless of decoder score
+  - Auto-exports `*_review_list.txt` with top 20 flagged segments after each transcription
   - Future: calibrate priority scores against ground-truth using logistic regression
 - [x] Norwegian spell-checking integration in pipeline (basic integration via `--spell-check`)
 - [x] Automatic `initial_prompt` / vocabulary injection for Whisper (via `--vocabulary-file`)
