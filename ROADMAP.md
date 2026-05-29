@@ -102,7 +102,7 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 ### Remaining (as of 2026-05-29)
 - **#8:** `editor.py` er fortsatt placeholder — korrekt parkert, Subtitle Edit dekker behovet
 - Ingen CI-pipeline — over-scope for personlig verktøy
-- **#21:** Norwegian spell-checking krever ekstern ordbok (NST/UiB) — feature er deaktivert inntil ordbok er på plass
+- **Spell-checking:** Featuren er deaktivert inntil en norsk ordbok lastes inn (ISSUES.md #21 er løst — honest failure — men selve funksjonaliteten krever fortsatt ekstern ordbok)
 
 ## Near-term priorities (revidert etter AUDIT.md §Strategisk gjennomgang)
 

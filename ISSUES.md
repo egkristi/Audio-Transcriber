@@ -216,5 +216,5 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 
 ## Resolved
 
-- #1, #2, #3, #4, #5, #6, #7, #9, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21
+- #1, #2, #3, #4, #5, #6, #7, #9, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26
 - See individual issue entries above for details.
