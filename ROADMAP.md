@@ -60,15 +60,28 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 - [~] Apple Silicon acceleration with CoreML / MLX support — CTranslate2 does not support MPS; whisper.cpp+CoreML or MLX would require a separate engine. Deferred.
 - [x] CUDA/GPU support for Linux/Windows — device auto-detection implemented (#13). CTranslate2 uses CUDA when available; PyTorch diarization uses CUDA/MPS.
 - [~] Model caching and memory optimization for batch jobs — language detection model cached (`_language_model`); transcription model loaded once per run. Full batch memory optimization is future work.
-- [ ] Performance profiling and resource usage monitoring
+- [ ] Performance profiling and resource usage monitoring — **next priority after fasit exists**
 
 ### Phase 7: Quality & documentation
 - [x] Add unit tests — 38 tests covering `analyze.py`, `preprocess.py`, `compare.py`, `diarize.py`
-- [ ] Add integration tests — requires real audio fixtures; blocked until fasit exists
+- [ ] Add integration tests — requires real audio fixtures; blocked until fasit exists. **Next priority after first successful end-to-end run.**
 - [~] Add CI pipeline — overinvestment for personal tool; targeted unit tests are sufficient
-- [ ] Add troubleshooting guide
+- [ ] Add troubleshooting guide — **add after collecting common failure modes from real runs**
 - [x] Add example workflows to README — batch and single-file examples present
-- [ ] Add API documentation / developer reference
+- [ ] Add API documentation / developer reference — **deferred until API stabilizes**
+
+## Test run findings (2026-05-29)
+
+Real pipeline execution on `testdata/Call recording Elida Anna Wiktoria Kristiansen_250923_040529.m4a` (683s, 48kHz AAC) revealed:
+
+1. **Runtime bug #27:** `src/normalize.py` missing `Path` import — crashed pipeline on startup. Fixed.
+2. **Runtime bug #28:** `scripts/run_pipeline.py` missing `numpy` import — crashed after transcription. Fixed.
+3. **Runtime bug #29:** `src/diarize.py` used deprecated `use_auth_token` parameter — pyannote.audio now expects `token`. Fixed.
+4. **HF gated repo:** `pyannote/speaker-diarization-3.1` requires explicit access acceptance on huggingface.co. The token validates but user is not in authorized list. **Workaround:** use `--no-diarize` to skip diarization until HF access is granted.
+5. **torchcodec warning:** Non-fatal warning about FFmpeg library versions. Does not block execution.
+6. **Transcription speed:** ~11+ minutes for 683s audio on CPU (Mac M1). Expected given CTranslate2 CPU-only constraint.
+7. **Vocabulary injection working:** 160 items loaded, 138 tokens generated (under 150 limit). Confirms #23 fix.
+8. **Audio caching working:** No double-load observed; preprocess reused `metadata.audio_data`. Confirms #22 fix.
 
 ## Key audit findings to address next
 
@@ -98,11 +111,15 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 - ✅ Issue #24 — eksplisitte avhengigheter i pyproject.toml (symspellpy, soundfile)
 - ✅ Issue #25 — fjernet `pydub` avhengighet (ubrukt; låste Python til <3.13)
 - ✅ Issue #26 — HF token validering med whoami()
+- ✅ Issue #27 — normalize.py Path import (runtime NameError)
+- ✅ Issue #28 — run_pipeline.py numpy import (runtime NameError)
+- ✅ Issue #29 — diarize.py token parameter (pyannote.audio API compatibility)
 
 ### Remaining (as of 2026-05-29)
 - **#8:** `editor.py` er fortsatt placeholder — korrekt parkert, Subtitle Edit dekker behovet
 - Ingen CI-pipeline — over-scope for personlig verktøy
 - **Spell-checking:** Featuren er deaktivert inntil en norsk ordbok lastes inn (ISSUES.md #21 er løst — honest failure — men selve funksjonaliteten krever fortsatt ekstern ordbok)
+- **HF gated repo access:** `pyannote/speaker-diarization-3.1` krever eksplisitt aksept på huggingface.co. Token validerer, men brukeren er ikke i autorisert liste. Bruk `--no-diarize` inntil tilgang er gitt.
 
 ## Near-term priorities (revidert etter AUDIT.md §Strategisk gjennomgang)
 
