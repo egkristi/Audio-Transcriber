@@ -276,14 +276,69 @@ class CommonNorwegianVocabulary:
         "NRK", "TV2", "Aftenposten", "VG"
     ]
     
+    # Northern Norwegian dialect words for vocabulary injection.
+    # These help Whisper recognize dialect forms instead of normalizing
+    # them to standard Eastern Norwegian.
+    # Grouped by category for organized prompt generation.
+    DIALECT_VOCABULARY = {
+        "northern_norwegian": {
+            # First person pronouns
+            "pronouns": ["æ", "mæ", "dæ", "sæ", "dokker", "dåkker", "ho", "hu"],
+            # Negation
+            "negation": ["ikkje", "itte"],
+            # Question words
+            "questions": ["ka", "kæ", "kor", "korsn", "kordan", "koffer", "koffor"],
+            # Adverbs and particles
+            "adverbs": ["bærre", "berre", "nån", "nåkkå", "nokka", "mykje"],
+            # Common verbs in dialect form
+            "verbs": ["e", "je", "ha", "kje", "ska", "være", "gjøre"],
+            # Common nouns / expressions
+            "expressions": ["no", "ille", "lita", "lite"],
+        }
+    }
+    
     @staticmethod
     def get_domain_vocabulary(domain: str) -> List[str]:
         """Get vocabulary for specific domain."""
         return CommonNorwegianVocabulary.COMMON_DOMAINS.get(domain, [])
     
     @staticmethod
-    def create_manager(domain: Optional[str] = None) -> VocabularyManager:
-        """Create vocabulary manager with domain vocabulary."""
+    def get_dialect_vocabulary(dialect: str = "northern_norwegian") -> List[str]:
+        """Get dialect-specific vocabulary for Whisper prompt injection.
+        
+        Flattens the categorized dialect words into a single list.
+        These words are injected into Whisper's initial_prompt so the
+        model is more likely to transcribe dialect forms correctly
+        instead of normalizing to standard Eastern Norwegian.
+        
+        Args:
+            dialect: Dialect region key. Currently only
+                     "northern_norwegian" is supported.
+        
+        Returns:
+            List of dialect words for the requested region.
+        """
+        categories = CommonNorwegianVocabulary.DIALECT_VOCABULARY.get(dialect, {})
+        words: List[str] = []
+        for category_words in categories.values():
+            words.extend(category_words)
+        return words
+    
+    @staticmethod
+    def create_manager(
+        domain: Optional[str] = None,
+        dialect: Optional[str] = None,
+    ) -> VocabularyManager:
+        """Create vocabulary manager with domain and/or dialect vocabulary.
+        
+        Args:
+            domain: Optional domain for domain-specific vocabulary.
+            dialect: Optional dialect region (e.g. "northern_norwegian")
+                     to inject dialect words into Whisper's prompt.
+        
+        Returns:
+            Initialized VocabularyManager.
+        """
         manager = VocabularyManager()
         
         # Add proper nouns
@@ -295,7 +350,18 @@ class CommonNorwegianVocabulary:
         # Add domain vocabulary if specified
         if domain:
             vocab = CommonNorwegianVocabulary.get_domain_vocabulary(domain)
-            manager.add_words(vocab, context=domain)
+            for word in vocab:
+                manager.add_word(word, context=domain)
+        
+        # Add dialect vocabulary if specified
+        if dialect:
+            dialect_words = CommonNorwegianVocabulary.get_dialect_vocabulary(dialect)
+            for word in dialect_words:
+                manager.add_word(word, context=f"dialect:{dialect}")
+            logger.info(
+                f"Added {len(dialect_words)} dialect words for '{dialect}' "
+                f"to vocabulary"
+            )
         
         return manager
 
@@ -303,6 +369,7 @@ class CommonNorwegianVocabulary:
 def load_vocabulary(
     vocab_file: Optional[Path] = None,
     domain: Optional[str] = None,
+    dialect: Optional[str] = None,
     use_default_norwegian: bool = True
 ) -> VocabularyManager:
     """
@@ -311,6 +378,9 @@ def load_vocabulary(
     Args:
         vocab_file: Path to custom vocabulary file
         domain: Domain for predefined vocabulary
+        dialect: Dialect region for dialect-specific vocabulary injection
+                 (e.g. "northern_norwegian"). Injects dialect words into
+                 Whisper's initial_prompt to improve recognition.
         use_default_norwegian: Load default Norwegian vocabulary (places, names,
             institutions) when no custom file is provided. Default True.
         
@@ -319,7 +389,19 @@ def load_vocabulary(
     """
     if vocab_file and vocab_file.exists():
         logger.info(f"Loading custom vocabulary from {vocab_file}")
-        return VocabularyManager(vocab_file)
+        manager = VocabularyManager(vocab_file)
+        
+        # Add dialect vocabulary on top of custom file if specified
+        if dialect:
+            dialect_words = CommonNorwegianVocabulary.get_dialect_vocabulary(dialect)
+            for word in dialect_words:
+                manager.add_word(word, context=f"dialect:{dialect}")
+            logger.info(
+                f"Added {len(dialect_words)} dialect words for '{dialect}' "
+                f"on top of custom vocabulary"
+            )
+        
+        return manager
     
     # Load default Norwegian vocabulary
     if use_default_norwegian:
@@ -335,14 +417,23 @@ def load_vocabulary(
                     manager.add_word(word, context=domain)
                 logger.info(f"Added {len(domain_vocab)} domain words for '{domain}'")
             
+            # Add dialect vocabulary if specified
+            if dialect:
+                dialect_words = CommonNorwegianVocabulary.get_dialect_vocabulary(dialect)
+                for word in dialect_words:
+                    manager.add_word(word, context=f"dialect:{dialect}")
+                logger.info(
+                    f"Added {len(dialect_words)} dialect words for '{dialect}'"
+                )
+            
             return manager
         else:
             logger.warning(f"Default Norwegian vocabulary not found at {default_vocab}")
     
     # Fallback to empty or domain-only
-    if domain:
-        logger.info(f"Loading predefined vocabulary for domain: {domain}")
-        return CommonNorwegianVocabulary.create_manager(domain)
+    if domain or dialect:
+        logger.info(f"Loading predefined vocabulary (domain={domain}, dialect={dialect})")
+        return CommonNorwegianVocabulary.create_manager(domain=domain, dialect=dialect)
     else:
         logger.debug("Using empty vocabulary manager")
         return VocabularyManager()

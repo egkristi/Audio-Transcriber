@@ -72,7 +72,7 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 
 ### Phase 8: Dialect recognition & adaptation
 - [~] **Dialect-aware normalization** (`src/normalize.py`) — basic dialect word flagging implemented for Northern Norwegian (Nordland, Troms, Finnmark). Dialect words are flagged for awareness but NOT auto-corrected. See `NORWEGIAN_DIALECT_MAP`.
-- [ ] **Dialect-adaptive vocabulary** — extend `src/vocabulary.py` to generate dialect-specific `initial_prompt` based on detected dialect region. Inject common dialect words into Whisper's prompt to improve recognition of non-standard forms.
+- [x] **Dialect-adaptive vocabulary** — `src/vocabulary.py` extended with `DIALECT_VOCABULARY` (30+ Northern Norwegian words across 6 categories: pronouns, negation, question words, adverbs, verbs, expressions). `load_vocabulary()` accepts `dialect="northern_norwegian"` parameter. Pipeline CLI has `--dialect northern_norwegian` flag. Dialect words are injected into Whisper's `initial_prompt` to improve recognition of non-standard forms.
 - [ ] **Dialect-specific language model** — evaluate whether fine-tuning or LoRA adapters on a Norwegian dialect corpus (e.g., Nordic Dialect Corpus, NB Whisper) improves WER for Northern Norwegian speech vs. the generic nb-whisper-large-verbatim model.
 - [ ] **Multi-dialect support** — extend dialect map to cover other Norwegian dialects (Trøndersk, Vestlandsk, Sørlandsk, Østlandsk) with region detection heuristics based on distinctive word patterns.
 - [ ] **Dialect confidence scoring** — add dialect-specific confidence signals: flag segments where Whisper outputs standard forms but dialect forms are expected, and vice versa. Prioritize these for review.

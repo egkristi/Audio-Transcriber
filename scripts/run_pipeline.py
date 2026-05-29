@@ -93,6 +93,7 @@ class AudioTranscriberPipeline:
         secondary_model: str = "openai/whisper-large-v3",
         db: Optional[TranscriptionDatabase] = None,
         vocab_file: Optional[Path] = None,
+        dialect: Optional[str] = None,
         spell_check: bool = False,
         min_speakers: Optional[int] = None,
         max_speakers: Optional[int] = None,
@@ -110,6 +111,8 @@ class AudioTranscriberPipeline:
             secondary_model: Secondary transcription model
             db: Optional TranscriptionDatabase for job tracking
             vocab_file: Optional custom vocabulary JSON file
+            dialect: Dialect region for vocabulary injection
+                     (e.g. "northern_norwegian")
             spell_check: Enable Norwegian spell-checking on output
             min_speakers: Minimum number of speakers for diarization
             max_speakers: Maximum number of speakers for diarization
@@ -214,15 +217,25 @@ class AudioTranscriberPipeline:
                 
                 if use_initial_prompt:
                     if vocab_file and vocab_file.exists():
-                        vocab = load_vocabulary(vocab_file=vocab_file, use_default_norwegian=False)
+                        vocab = load_vocabulary(
+                            vocab_file=vocab_file,
+                            dialect=dialect,
+                            use_default_norwegian=False,
+                        )
                     else:
-                        vocab = load_vocabulary(use_default_norwegian=True)
+                        vocab = load_vocabulary(
+                            use_default_norwegian=True,
+                            dialect=dialect,
+                        )
                     
                     initial_prompt = vocab.generate_initial_prompt()
                     if initial_prompt:
                         transcription_config = dict(transcription_config)
                         transcription_config["initial_prompt"] = initial_prompt
-                        logger.info(f"Initial prompt generated ({len(vocab.vocabulary)} vocabulary items)")
+                        logger.info(
+                            f"Initial prompt generated ({len(vocab.vocabulary)} vocabulary items)"
+                            + (f", dialect={dialect}" if dialect else "")
+                        )
                 
                 primary_segments, primary_output = transcribe_audio(
                     preprocessed_path,
@@ -608,6 +621,15 @@ Examples:
         help="Path to JSON vocabulary file for initial_prompt injection"
     )
     parser.add_argument(
+        "--dialect",
+        type=str,
+        default=None,
+        choices=["northern_norwegian"],
+        help="Dialect region for vocabulary injection. Injects dialect words "
+             "into Whisper's initial_prompt to improve recognition of "
+             "non-standard forms. Currently supports: northern_norwegian"
+    )
+    parser.add_argument(
         "--spell-check",
         action="store_true",
         default=False,
@@ -663,6 +685,7 @@ Examples:
             "secondary_model": args.secondary_model,
             "db": db,
             "vocab_file": args.vocabulary_file,
+            "dialect": args.dialect,
             "spell_check": args.spell_check,
             "min_speakers": args.min_speakers,
             "max_speakers": args.max_speakers,

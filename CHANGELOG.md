@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-05-29
+
+### Added
+- **Dialect-adaptive vocabulary** (`src/vocabulary.py`) — new `DIALECT_VOCABULARY` constant with 30+ Northern Norwegian dialect words across 6 categories (pronouns, negation, question words, adverbs, verbs, expressions). `load_vocabulary()` accepts `dialect="northern_norwegian"` parameter to inject dialect words into Whisper's `initial_prompt`. `CommonNorwegianVocabulary.get_dialect_vocabulary()` and `create_manager(dialect=...)` added.
+- **`--dialect` CLI flag** (`scripts/run_pipeline.py`) — new `--dialect northern_norwegian` argument passes dialect region through to vocabulary loading. Wired into `process_single_file()` and `pipeline_kwargs`.
+
+### Changed
+- **ROADMAP.md** — Phase 8 "Dialect-adaptive vocabulary" marked as implemented (`[x]`).
+
 ## [0.1.10] - 2026-05-29
 
 ### Added
