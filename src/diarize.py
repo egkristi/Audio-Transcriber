@@ -119,7 +119,7 @@ class Diarizer:
             
             self.model = Pipeline.from_pretrained(
                 model_name,
-                use_auth_token=True  # Requires Hugging Face login
+                token=True  # Requires Hugging Face login
             )
             
             # Move to device (CPU for Mac)

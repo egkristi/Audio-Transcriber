@@ -23,6 +23,8 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional, List, Dict
 
+import numpy as np
+
 # Add parent directory to path to import src modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 

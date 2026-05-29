@@ -17,6 +17,7 @@ auto-correcting, to avoid introducing new errors.
 """
 
 import re
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from .utils import get_logger
