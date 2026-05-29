@@ -18,6 +18,7 @@ Usage:
 import argparse
 import json
 import sys
+from dataclasses import asdict
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional, List, Dict
@@ -36,6 +37,7 @@ from src.editor import export_for_manual_editing
 from src.database import TranscriptionDatabase
 from src.vocabulary import load_vocabulary
 from src.spell_check import check_transcription
+from src.confidence import extract_confidence_signals
 
 logger = get_logger("pipeline")
 
@@ -48,19 +50,31 @@ class AudioTranscriberPipeline:
         self.config = load_config(config_path)
         
     def _find_audio_files(self, input_path: Path) -> List[Path]:
-        """Find all audio files in path."""
+        """Find all audio files in path, filtering out likely corrupted files."""
         AUDIO_EXTENSIONS = {".m4a", ".mp3", ".wav", ".flac", ".ogg", ".wma"}
+        MIN_FILE_SIZE_BYTES = 1024  # Filter out empty/corrupted files
         
         if input_path.is_file():
             if input_path.suffix.lower() in AUDIO_EXTENSIONS:
+                if input_path.stat().st_size < MIN_FILE_SIZE_BYTES:
+                    logger.warning(f"Skipping likely corrupted file (<1KB): {input_path.name}")
+                    return []
                 return [input_path]
             else:
                 logger.warning(f"Not an audio file: {input_path}")
                 return []
         
         audio_files = []
+        skipped = 0
         for ext in AUDIO_EXTENSIONS:
-            audio_files.extend(input_path.glob(f"**/*{ext}"))
+            for f in input_path.glob(f"**/*{ext}"):
+                if f.stat().st_size >= MIN_FILE_SIZE_BYTES:
+                    audio_files.append(f)
+                else:
+                    skipped += 1
+        
+        if skipped:
+            logger.warning(f"Skipped {skipped} file(s) smaller than 1KB (likely corrupted)")
         
         logger.info(f"Found {len(audio_files)} audio files")
         return sorted(audio_files)
@@ -205,6 +219,44 @@ class AudioTranscriberPipeline:
                     "segments_count": len(primary_segments),
                     "output_file": primary_output
                 }
+                
+                # Step: Confidence-flagging for review prioritization
+                logger.info("\nSTEP: Confidence Flagging")
+                try:
+                    # Convert segments to dicts for confidence extractor
+                    seg_dicts = [
+                        {
+                            "start": s.start,
+                            "end": s.end,
+                            "text": s.text,
+                            "speaker": s.speaker,
+                            "words": s.words,
+                            "confidence": s.confidence,
+                        }
+                        for s in primary_segments
+                    ]
+                    confidence_config = self.config.get("transcription", {})
+                    confidence_segments = extract_confidence_signals(
+                        segments=seg_dicts,
+                        aligned_word_segments=None,
+                        comparison_results=None,
+                        metadata=asdict(metadata),
+                        config=confidence_config,
+                    )
+                    # Export review list
+                    review_path = file_output_dir / f"{file_path.stem}_review_list.txt"
+                    from src.confidence import ConfidenceExtractor
+                    extractor = ConfidenceExtractor(confidence_config)
+                    extractor.export_review_list(confidence_segments, review_path, top_n=20)
+                    results["steps"]["confidence"] = {
+                        "status": "complete",
+                        "segments_flagged": len([s for s in confidence_segments if s.flags]),
+                        "review_list": str(review_path),
+                    }
+                    logger.info(f"Confidence review list exported: {review_path}")
+                except Exception as conf_err:
+                    logger.warning(f"Confidence extraction failed: {conf_err}")
+                    results["steps"]["confidence"] = {"status": "failed", "error": str(conf_err)}
                 
                 # Log transcription segments to database
                 if db and job_id:
@@ -426,8 +478,8 @@ Examples:
     parser.add_argument(
         "--workers",
         type=int,
-        default=4,
-        help="Number of parallel workers for batch processing (default: 4)"
+        default=1,
+        help="Number of parallel workers for batch processing (default: 1, recommended for CPU-only)"
     )
     
     # Optional integrations

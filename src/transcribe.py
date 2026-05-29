@@ -300,11 +300,11 @@ def _segments_to_srt(segments: List[TranscriptionSegment]) -> str:
         lines.append(str(i))
         lines.append(f"{_format_timestamp_srt(seg.start)} --> {_format_timestamp_srt(seg.end)}")
         
-        # Include speaker label if available
+        # Include speaker label inline with text (valid SRT)
         if seg.speaker:
-            lines.append(f"{seg.speaker}")
-        
-        lines.append(seg.text)
+            lines.append(f"{seg.speaker}: {seg.text}")
+        else:
+            lines.append(seg.text)
         lines.append("")
     
     return "\n".join(lines)

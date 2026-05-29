@@ -86,6 +86,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+## [0.1.4] - 2026-05-29
+
+### Added
+- **Confidence-flagging wired into pipeline** (`scripts/run_pipeline.py`)
+  - Automatic confidence extraction after every transcription
+  - Exports `*_review_list.txt` with top 20 flagged segments for manual review
+  - Integrates decoder signals, acoustic features, and metadata
+- **Corrupted file filtering** (`scripts/run_pipeline.py`)
+  - `_find_audio_files()` skips files smaller than 1KB (likely corrupted)
+  - Logs count of skipped files
+- **Language detection confidence threshold** (`src/analyze.py`)
+  - Falls back to "no" (Norwegian) when `language_probability < 0.5`
+  - Prevents false "et" (Estonian) detections on Norwegian speech
+
+### Changed
+- **Loudness target** (`config.yaml`): `-16 LUFS` → `-20 LUFS` for high-dynamic-range recordings
+- **Beam size** (`config.yaml`): `5` → `10` for improved verbatim accuracy (quality/speed tradeoff)
+- **Default workers** (`scripts/run_pipeline.py`): `4` → `1` for CPU-only inference (avoids GIL contention and OOM)
+- **SRT speaker format** (`src/transcribe.py`): Speaker label now inline (`SPEAKER_00: text`) instead of separate line
+
+### Fixed
+- **Loudness clipping** (`src/preprocess.py`): Gain is now capped so peak never exceeds 1.0 (pre-clipping instead of post-clipping)
+- **Language detection false positives** (`src/analyze.py`): Tiny model no longer trusted for low-confidence detections
+
 ## [0.1.3] - 2026-05-28
 
 ### Added

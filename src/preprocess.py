@@ -146,14 +146,19 @@ def normalize_loudness(
         loudness_diff = target_lufs - current_loudness
         gain = 10 ** (loudness_diff / 20)
         
+        # Prevent clipping: limit gain so peak never exceeds 1.0
+        peak = np.max(np.abs(audio_data))
+        if peak > 0:
+            max_allowed_gain = 1.0 / peak
+            if gain > max_allowed_gain:
+                logger.warning(
+                    f"Gain {gain:.2f} would clip (peak {peak:.2f} → {peak * gain:.2f}). "
+                    f"Capping gain to {max_allowed_gain:.2f}"
+                )
+                gain = max_allowed_gain
+        
         logger.debug(f"Current loudness: {current_loudness:.1f} LUFS, applying gain: {gain:.2f}")
         normalized = audio_data * gain
-        
-        # Prevent clipping
-        max_val = np.max(np.abs(normalized))
-        if max_val > 1.0:
-            logger.warning(f"Clipping detected ({max_val:.2f}), reducing gain")
-            normalized = normalized / max_val
         
         return normalized
     except Exception as e:

@@ -58,10 +58,10 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 
 ### #11: `ThreadPoolExecutor` does not parallelize CPU-bound work
 - **File:** `scripts/run_pipeline.py`
-- **Status:** Open
-- **Description:** Batch processing uses `ThreadPoolExecutor`, but transcription and diarization are CPU-bound tasks. Python's GIL prevents true parallelism with threads, so multiple workers do not speed up processing and may even cause memory contention.
-- **Impact:** Batch processing is not faster than single-file; may cause OOM with multiple large models in memory.
-- **Fix:** Switch to `ProcessPoolExecutor` for CPU-bound stages, or document that `--workers` should be kept at 1 for CPU-only inference.
+- **Status:** Resolved (2026-05-29)
+- **Description:** Batch processing used `ThreadPoolExecutor` with default 4 workers, but transcription and diarization are CPU-bound. Python's GIL prevents true parallelism with threads.
+- **Impact:** Batch processing was not faster than single-file; risk of OOM with multiple large models in memory.
+- **Fix:** Changed default `--workers` from 4 to 1. Documented that >1 only makes sense on CUDA with sufficient VRAM.
 
 ### #12: `analyze.py` loads full whisperx model just for language detection
 - **File:** `src/analyze.py`
@@ -81,19 +81,16 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
   - For betydelig hastighetsøkning på Mac: vurder whisper.cpp+CoreML eller MLX — men dette er en egen motor, ikke et device-flagg.
 
 ### #14: Confidence-flagging for review prioritization
-- **File:** `src/confidence.py` (new), `src/transcribe.py`, `src/compare.py`
-- **Status:** Open — design complete, stub created
+- **File:** `src/confidence.py`, `scripts/run_pipeline.py`
+- **Status:** Resolved (2026-05-29)
 - **Description:** Pipeline outputs transcripts but provides no signal about which segments are most likely to contain errors. Manual review is therefore uniform rather than prioritized.
 - **Signals available:**
   1. **WhisperX alignment score** (`word["score"]`) — acoustic "text vs audio" confidence from wav2vec2 forced alignment
   2. **faster-whisper decoder signals:** `avg_logprob`, `no_speech_prob`, `compression_ratio`, `temperature`, `word.probability`
   3. **Cross-model disagreement** — already computed in `compare.py`
   4. **Acoustic features** from `analyze.py`: SNR, VAD overlap (simultaneous speech)
-- **Approach:**
-  - Phase A (immediate): Extract all signals, normalize to [0,1], compute unweighted priority score. Rank segments by priority for review.
-  - Phase B (future): Use ground-truth fasit to fit a logistic regression model mapping signals → P(error). This calibrates priority into a true probability.
+- **Fix:** `src/confidence.py` extracts signals from transcription output, computes priority scores, and exports a prioritized review list. Wired into `run_pipeline.py` as automatic step after transcription. Exports `*_review_list.txt` with top 20 flagged segments.
 - **Honest limitation:** Confidence-flagging catches "model knew it was uncertain" errors but misses "confidently wrong" errors — especially plausible substitutions of names and numbers. These get high decoder confidence because they are linguistically plausible. Therefore: confidence is a supplement, not a replacement. Proper nouns and numbers should be reviewed regardless of score.
-- **Fix:** Create `src/confidence.py` that extracts signals from transcription output, computes priority scores, and exports a prioritized review list. Wire into `run_pipeline.py` as optional step.
 
 ### #8: `editor.py` is a placeholder
 - **File:** `src/editor.py`
@@ -109,10 +106,42 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 - **Impact:** False positives/negatives in disagreement detection.
 - **Fix:** Implement word-level alignment (e.g., using `jiwer` or a custom DTW-based approach) and compute actual WER between segments.
 
-### #10: No Apple Silicon / GPU acceleration
-- **Status:** Resolved (2026-05-28) — merged into #13
-- **Description:** Overlapped with #13 (hardcoded device). CTranslate2 does not support MPS; see #13 for canonical status.
+### #15: Language detection returns wrong language for Norwegian
+- **File:** `src/analyze.py`
+- **Status:** Resolved (2026-05-29)
+- **Description:** `detect_language()` using faster-whisper tiny model returned "et" (Estonian) for Norwegian speech with confidence 0.29.
+- **Impact:** Metadata reports wrong language. Future multi-language support would be broken.
+- **Fix:** Added confidence threshold (0.5). If `info.language_probability < 0.5`, falls back to "no" (Norwegian). Logs warning when fallback triggers.
+
+### #16: Loudness normalization causes clipping
+- **File:** `src/preprocess.py`
+- **Status:** Resolved (2026-05-29)
+- **Description:** `normalize_loudness()` with target -16 LUFS caused peak 0.66 → 1.91 on high-dynamic-range recordings, triggering clipping reduction.
+- **Impact:** Digital distortion from clipping can reduce transcription accuracy.
+- **Fix:** Two changes: (1) Capped gain so peak never exceeds 1.0 (pre-clipping instead of post-clipping). (2) Changed default `loudness_target_lufs` from -16 to -20 in `config.yaml`.
+
+### #17: Corrupted test files cause batch failures
+- **File:** `scripts/run_pipeline.py`
+- **Status:** Resolved (2026-05-29)
+- **Description:** ~400 of 410 test files were corrupted ("moov atom not found", 0 bytes). Batch processing failed on all of them.
+- **Impact:** Cannot run batch processing without manual filtering.
+- **Fix:** `_find_audio_files()` now skips files smaller than 1KB. Logs count of skipped files.
+
+### #18: SRT speaker labels on separate line break compatibility
+- **File:** `src/transcribe.py`
+- **Status:** Resolved (2026-05-29)
+- **Description:** `_segments_to_srt()` placed speaker label (`SPEAKER_00`) on its own line between timestamp and text. Most SRT parsers treat this as subtitle text.
+- **Impact:** External editors (Subtitle Edit, VLC) display speaker labels as visible text.
+- **Fix:** Speaker label now inline: `SPEAKER_00: text` on the same line as subtitle content.
+
+### #19: Beam size too low for best accuracy
+- **File:** `config.yaml`
+- **Status:** Resolved (2026-05-29)
+- **Description:** Default `beam_size: 5` is conservative. For verbatim transcription (nb-whisper-large-verbatim), higher beam search improves accuracy at the cost of ~2× slower decoding.
+- **Impact:** Suboptimal transcription accuracy, especially for rare words and names.
+- **Fix:** Increased `beam_size` from 5 to 10. Best-of remains 5. This is a quality/speed tradeoff appropriate for a verbatim model.
 
 ## Resolved
 
-_None yet._
+- #1, #2, #3, #6, #7, #11, #12, #13, #14, #15, #16, #17, #18, #19
+- See individual issue entries above for details.

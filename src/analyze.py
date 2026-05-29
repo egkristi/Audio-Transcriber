@@ -188,7 +188,12 @@ def detect_language(file_path: Path) -> str:
         # Consume generator to ensure info is populated
         next(iter(segments), None)
         detected = info.language if info and info.language else "no"
-        logger.info(f"Detected language for {file_path.name}: {detected} (confidence: {info.language_probability:.2f})")
+        confidence = info.language_probability if info else 0.0
+        logger.info(f"Detected language for {file_path.name}: {detected} (confidence: {confidence:.2f})")
+        # Threshold: low-confidence detection is unreliable with tiny model
+        if confidence < 0.5:
+            logger.warning(f"Language detection confidence too low ({confidence:.2f}), falling back to 'no' (Norwegian)")
+            return "no"
         return detected
     except Exception as e:
         logger.warning(f"Language detection failed for {file_path}: {e}, defaulting to 'no'")

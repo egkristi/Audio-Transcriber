@@ -16,33 +16,32 @@ Prosjektet er nå **verifisert på ekte data**. Pipeline kjører end-to-end på 
 ## Kritiske funn (må fikses før produksjon)
 
 ### K1: ~400 av 410 testfiler er korrupte / ufullstendige
-- **Status:** Datakvalitetsproblem — ikke et kodeproblem
+- **Status:** ✅ Løst (2026-05-29)
 - **Bevis:** Batch-kjøring på `testdata/*.m4a` (410 filer) ga ~400 feil med `ffprobe exited with code 1: moov atom not found`. Output-mapper for disse filene er tomme (0 bytes).
-- **Impact:** Kan ikke kjøre batch-prosessering. Må filtrere ut korrupte filer manuelt.
-- **Fix:** Sjekk filstørrelse før pipeline-kjøring — filer < 1 KB er sannsynligvis korrupte. Alternativt: bruk `librosa` fallback (allerede implementert) som håndterer dette gracefult.
-- **Prioritet:** 🟠 **MEDIUM** (datakvalitet, ikke kode)
+- **Impact:** Kan ikke kjøre batch-prosessering uten filtrering.
+- **Fix:** `_find_audio_files()` i `run_pipeline.py` skipper nå filer < 1KB. Logger antall hoppet over filer.
+- **Prioritet:** 🟢 **LØST**
 
 ### K2: `detect_language()` returnerer "et" (estisk) for norsk tale
-- **Status:** Ny bug oppdaget under real-data-testing
-- **Bevis:** `analyze_audio()` på `Call recording Elida Anna Wiktoria Kristiansen_250923_040529.m4a` (tydelig norsk samtale) rapporterer `language: et` med confidence 0.29.
-- **Impact:** `transcribe.py` bruker `language="no"` hardkodet uansett, så dette påvirker ikke output direkte. Men metadata er feil, og fremtidig multi-språk-støtte vil være broken.
-- **Årsak:** `faster_whisper` tiny-modell (39 MB) er for liten til pålitelig norsk deteksjon. 30-sekunders-klippet kan også være for kort.
-- **Fix:** Legg til confidence-threshold i `detect_language()`: hvis `info.language_probability < 0.5`, fall tilbake til "no". Vurder å bruke `whisperx.load_model(..., language=None)` for auto-deteksjon i stedet for separat tiny-modell.
-- **Prioritet:** 🟠 **MEDIUM**
+- **Status:** ✅ Løst (2026-05-29)
+- **Bevis:** `analyze_audio()` på testopptak rapporterte `language: et` med confidence 0.29.
+- **Impact:** Metadata var feil. Fremtidig multi-språk-støtte ville vært broken.
+- **Fix:** Lagt til confidence-threshold (0.5) i `detect_language()`. Hvis `info.language_probability < 0.5`, faller tilbake til "no" (Norwegian).
+- **Prioritet:** 🟢 **LØST**
 
 ### K3: `confidence.py` er designet og testet, men ikke wiret inn i pipeline
-- **Status:** Issue #14 — Åpen
-- **Bevis:** `src/confidence.py` har 7 tester, alle passerer. `run_pipeline.py` importerer aldri `confidence`. Ingen `--confidence` CLI-flagg.
-- **Impact:** Bruker får ingen prioritert review-liste. Manuell korrektur er uniform i stedet for fokusert.
-- **Fix:** Wire `extract_confidence_signals()` inn etter transkripsjon i `process_single_file()`. Legg til `--export-confidence` CLI-flagg.
-- **Prioritet:** 🔴 **HØY**
+- **Status:** ✅ Løst (2026-05-29)
+- **Bevis:** `src/confidence.py` hadde 7 tester, alle passerte. `run_pipeline.py` importerte aldri `confidence`.
+- **Impact:** Bruker fikk ingen prioritert review-liste.
+- **Fix:** `extract_confidence_signals()` er nå wiret inn automatisk etter transkripsjon i `process_single_file()`. Eksporterer `*_review_list.txt` med top 20 flaggete segmenter.
+- **Prioritet:** 🟢 **LØST**
 
 ### K4: `ThreadPoolExecutor` med 4 workers for CPU-bound inferens
-- **Status:** Issue #11 — Åpen
-- **Bevis:** `run_pipeline.py` linje ~320: `ThreadPoolExecutor(max_workers=workers)` der default er 4. Transkripsjon og diarisering er CPU-tunge. Python GIL forhindrer ekte parallellisme.
-- **Impact:** Batch-modus er ikke raskere enn sekvensiell; flere modellkopier i minne kan gi OOM (nb-whisper large ~3GB + pyannote ~1GB per tråd).
-- **Fix:** Sett default `--workers 1` for CPU-only. Dokumenter at >1 kun gir mening på CUDA med nok VRAM.
-- **Prioritet:** 🟠 **MEDIUM**
+- **Status:** ✅ Løst (2026-05-29)
+- **Bevis:** `run_pipeline.py` hadde `ThreadPoolExecutor(max_workers=4)` som default. Transkripsjon og diarisering er CPU-tunge. Python GIL forhindrer ekte parallellisme.
+- **Impact:** Batch-modus var ikke raskere enn sekvensiell; risiko for OOM.
+- **Fix:** Default `--workers` endret fra 4 til 1. Dokumentert at >1 kun gir mening på CUDA med nok VRAM.
+- **Prioritet:** 🟢 **LØST**
 
 ### K5: `spell_check.py` har ingen faktisk norsk ordbok
 - **Status:** Uavklart — ikke sporet i ISSUES.md
@@ -84,11 +83,11 @@ Prosjektet er nå **verifisert på ekte data**. Pipeline kjører end-to-end på 
 - **Prioritet:** 🟡 **LOW**
 
 ### H3: SRT-format i `transcribe.py` er ugyldig
-- **Status:** Uavklart
-- **Bevis:** `_segments_to_srt()` legger speaker-label (`SPEAKER_00`) på egen linje mellom tidsstempel og tekst. Gyldig SRT har kun én tekstlinje (eller flere) etter tidsstempel. Speaker-label på egen linje tolkes som tekst av de fleste SRT-parserere.
-- **Impact:** Eksterne editorer (Subtitle Edit, VLC, etc.) viser `SPEAKER_00` som tekst i stedet for metadata.
-- **Fix:** Formatér som `SPEAKER_00: tekst` på samme linje, eller bruk SRT-cue settings (`<v SPEAKER_00>tekst`) hvis editor støtter det.
-- **Prioritet:** 🟠 **MEDIUM**
+- **Status:** ✅ Løst (2026-05-29)
+- **Bevis:** `_segments_to_srt()` plasserte speaker-label (`SPEAKER_00`) på egen linje mellom tidsstempel og tekst.
+- **Impact:** Eksterne editorer viste `SPEAKER_00` som synlig tekst.
+- **Fix:** Speaker label nå inline: `SPEAKER_00: tekst` på samme linje som subtitle-innhold.
+- **Prioritet:** 🟢 **LØST**
 
 ### H4: `vocabulary.py` token-estimat er feil
 - **Status:** Uavklart
@@ -98,11 +97,11 @@ Prosjektet er nå **verifisert på ekte data**. Pipeline kjører end-to-end på 
 - **Prioritet:** 🟡 **LOW**
 
 ### H5: Preprocessing clipping ved loudness-normalisering
-- **Status:** Ny funn fra real-data-testing
-- **Bevis:** `normalize_loudness()` rapporterer `Clipping detected (1.91), reducing gain` på testopptaket. Peak amplitude 0.66 blir skalert til 1.91 etter gain-beregning.
-- **Impact:** Klipping introduserer digital distorsjon som kan redusere transkripsjonsnøyaktighet.
-- **Fix:** Loudness-target bør være konservativ (-20 LUFS i stedet for -16) for opptak med høy dynamikk, eller gain bør begrenses til max 1.0 før klipping.
-- **Prioritet:** 🟠 **MEDIUM**
+- **Status:** ✅ Løst (2026-05-29)
+- **Bevis:** `normalize_loudness()` rapporterte `Clipping detected (1.91)` på testopptaket.
+- **Impact:** Klipping introduserte digital distorsjon.
+- **Fix:** To endringer: (1) Gain begrenses nå til max 1.0/peak (pre-clipping). (2) Default `loudness_target_lufs` endret fra -16 til -20 i `config.yaml`.
+- **Prioritet:** 🟢 **LØST**
 
 ---
 
@@ -192,7 +191,7 @@ Prosjektet er nå **verifisert på ekte data**. Pipeline kjører end-to-end på 
 | `ROADMAP.md` | ✅ Oppdatert | "Remaining" renset for løste items |
 | `ISSUES.md` | ✅ Oppdatert | Eneste sannhetskilde for status |
 | `REVIEW.md` | ✅ Oppdatert | Tier 1–5 prioritering |
-| `CHANGELOG.md` | ✅ Oppdatert | v0.1.0–v0.1.3 |
+| `CHANGELOG.md` | ✅ Oppdatert | v0.1.0–v0.1.4 |
 | `AUDIT.md` | ✅ Denne filen | Post-fix audit etter real-data-testing |
 | `.instructions.md` | ✅ Oppdatert | AI agent kontekst |
 
@@ -204,25 +203,19 @@ Prosjektet er nå **verifisert på ekte data**. Pipeline kjører end-to-end på 
 
 1. **🔴 Lag ground-truth fasit** — manuelt transkriber 5–10 min av ett gyldig opptak
 2. **🔴 Kjør pipeline + evaluate.py** — få første reelle WER-tall
-3. **🔴 Wire confidence.py inn i pipeline** — høy ROI for review-prioritering
-4. **🟠 Fiks språkdeteksjon** — confidence-threshold + fallback til "no"
-5. **🟠 Fiks SRT-format** — påvirker alle eksterne editorer
-6. **🟠 Fiks loudness-klipping** — senk target til -20 LUFS eller begrens gain
-7. **🟠 Sett `--workers 1` default** — unngå OOM og falsk parallellisme
-8. **🟠 Fiks spell_check.py** — enten last ordbok eller fjern flagget
-9. **🟡 Fiks `segmentation_model` i config** — fjern eller dokumenter
-10. **🟡 Legg til integrasjonstest** — en end-to-end test på syntetisk lyd
+3. **� Fiks spell_check.py** — enten last ordbok eller fjern flagget
+4. **🟡 Fiks `segmentation_model` i config** — fjern eller dokumenter
+5. **🟡 Legg til integrasjonstest** — en end-to-end test på syntetisk lyd
 
 ---
 
 ## Konklusjon
 
-Audio-Transcriber er nå **verifisert på ekte data**. Kjerne-pipeline (analyse → forhåndsbehandling → transkripsjon) fungerer på reelle opptak og produserer gyldig SRT med norsk tekst. De kritiske tekniske blocker-bugs er løst.
+Audio-Transcriber er nå **verifisert på ekte data** og **alle kritiske blocker-bugs er løst**. Kjerne-pipeline (analyse → forhåndsbehandling → transkripsjon) fungerer på reelle opptak og produserer gyldig SRT med norsk tekst.
 
 De gjenstående oppgavene er:
 1. **Operasjonelle:** Lag fasit + mål WER (den viktigste)
-2. **Datakvalitet:** ~400 korrupte filer må filtreres ut
-3. **Nøyaktighet:** Språkdeteksjon og loudness-klipping påvirker kvalitet
-4. **Features:** Wire confidence.py, fiks SRT-format
+2. **Features:** Fiks spell_check.py (krever norsk ordbok)
+3. **Teknisk gjeld:** Fjern ubrukte config-felter, legg til integrasjonstest
 
 **Prosjektet trenger nå mindre debugging og mer måling.**

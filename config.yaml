@@ -12,7 +12,7 @@ preprocessing:
   target_channels: 1  # Mono
   high_pass_filter_hz: 80
   low_pass_filter_hz: 8000
-  loudness_target_lufs: -16
+  loudness_target_lufs: -20
   loudness_algorithm: "ITU-R BS.1770-4"
   denoising: false  # Disabled by default; enable only for high background noise
   denoising_strength: 0.5
@@ -35,7 +35,7 @@ transcription:
   fallback_model: "NbAiLab/nb-whisper-large"  # Grammatically corrected version
   
   # Whisper settings
-  beam_size: 5
+  beam_size: 10
   best_of: 5
   patience: 1.0
   length_penalty: 1.0
