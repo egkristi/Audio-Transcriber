@@ -1,133 +1,227 @@
-# AI Agent Instructions — Audio-Transcriber
+# AGENT.md — Audio-Transcriber AI Agent Instructions
 
-## Project Identity
+> Read this file first. Then read `REVIEW.md`, `AUDIT.md`, `ISSUES.md`, and the latest `CHANGELOG.md` entry. **Verify the current state against the actual code before trusting any document — drift has been observed in this repo, including in audit reports.**
+
+---
+
+## 1. Mission
+
+Drive the project toward measurably accurate Norwegian transcription of real call recordings on the operator's machine. Strategic guidance lives in `REVIEW.md` and is canonical.
+
+The non-negotiable goal: a fasit (ground-truth transcript) plus a baseline WER number on a real recording. Without those, every "improvement" is speculation.
+
+---
+
+## 2. Project Identity
+
 - **Name:** Audio-Transcriber
-- **Purpose:** Norwegian audio transcription pipeline with speaker diarization, multi-model comparison, and confidence-based review prioritization.
-- **Language:** Primarily Norwegian (Bokmål/Nynorsk) audio → Norwegian text transcription.
+- **Purpose:** Norwegian audio transcription pipeline with speaker diarization, multi-model comparison, and confidence-based review prioritization
+- **Primary language:** Norwegian (Bokmål/Nynorsk). Language detection currently falls back to `"no"` when confidence < 0.5 — a deliberate hardcode for a Norwegian-only tool.
 - **License:** MIT
 - **Repository:** https://github.com/egkristi/Audio-Transcriber
 
-## Tech Stack
-- **Python:** 3.11 (locked to <3.13 due to `audioop` deprecation in pydub)
-- **Package Manager:** `uv` (not pip)
-- **OS:** macOS (primary target), with CUDA support for Linux/Windows
-- **Core Dependencies:**
-  - `whisperx` (faster-whisper + wav2vec2 alignment)
-  - `pyannote.audio` (speaker diarization, requires HF auth)
-  - `torch` / `torchaudio` (PyTorch backend)
-  - `librosa`, `soundfile`, `scipy` (audio processing)
-  - `pydub` (audio I/O — note: `audioop` deprecated in Python 3.13)
-  - `jiwer` (WER/CER evaluation)
-  - `pyloudnorm` (ITU-R BS.1770-4 loudness)
-  - `numpy`, `pyyaml`
-- **External Tools Required:** `ffmpeg` and `ffprobe` (install via `brew install ffmpeg`)
+---
 
-## Architecture Overview
+## 3. Tech Stack
+
+- **Python:** 3.11, locked to `<3.13` due to `audioop` deprecation in `pydub` (tracked tech debt — AUDIT M2)
+- **Package manager:** `uv` (never `pip` directly — bypasses lockfile)
+- **OS:** macOS primary; Linux/Windows for CUDA paths
+- **Core dependencies:** `whisperx`, `pyannote.audio`, `torch`, `librosa`, `soundfile`, `pydub`, `jiwer`, `pyloudnorm`, `pyyaml`, `numpy`, `symspellpy`
+- **External tools:** `ffmpeg` and `ffprobe` (install via `brew install ffmpeg`)
+
+---
+
+## 4. Architecture
 
 6-stage pipeline orchestrated by `scripts/run_pipeline.py`:
 
 ```
-Step 1: analyze.py      → AudioMetadata (duration, sr, language, VAD, loudness)
-Step 2: preprocess.py   → Resampled, filtered, normalized mono WAV
-Step 3: diarize.py      → Speaker segments (pyannote)
-Step 4: transcribe.py    → WhisperX transcription + word-level timestamps
-Step 5: compare.py      → Optional: multi-model comparison + disagreement flagging
-Step 6: editor.py       → SRT export + manual editing instructions
+analyze → preprocess → diarize → transcribe → compare (optional) → editor
 ```
 
 Supporting modules:
-- `confidence.py` — Extracts 8 signals from transcription output to prioritize segments for review. **Wired into pipeline** (auto-runs after transcription, exports `*_review_list.txt`).
-- `database.py` — SQLite job tracking (optional, via `--use-database`)
-- `spell_check.py` — Norwegian spell-checking placeholder (no actual dictionary loaded)
-- `vocabulary.py` — Custom vocabulary → Whisper `initial_prompt` injection
-- `config.py` — YAML config loader
-- `utils.py` — Logging, JSON helpers, file utilities
+- `confidence.py` — **wired in**; auto-runs after transcription; exports `*_review_list.txt` with top 20 flagged segments. Validation against fasit still pending.
+- `database.py` — opt-in via `--use-database`
+- `spell_check.py` — opt-in via `--spell-check` **but currently a silent no-op** (no dictionary loaded — see open finding K5 in §6)
+- `vocabulary.py` — opt-in via `--vocabulary-file`; generates Whisper `initial_prompt`
+- `config.py`, `utils.py` — config loading, logging, file helpers
 
-## Critical Constraints
+---
 
-1. **CTranslate2 does NOT support Apple Metal/MPS.** Transcription is CPU-only on Mac. Diarization (PyTorch) can use MPS.
-2. **Device auto-detection is already implemented:**
-   - `transcribe.py`: cuda → cpu fallback
-   - `diarize.py`: cuda → mps → cpu fallback
-3. **pyannote requires Hugging Face auth:** Run `uv run huggingface-cli login` first.
-4. **Default `--workers` should be 1** for CPU-only inference. ThreadPoolExecutor does not parallelize CPU-bound work due to Python GIL.
-5. **Confidence-flagging catches "uncertain" errors but misses "confidently wrong" errors** (names, numbers). Hard-rules for these are needed.
-6. **Language detection has confidence threshold fallback.** `detect_language()` falls back to "no" when `language_probability < 0.5`. Tiny model is unreliable for Norwegian — this prevents false "et" (Estonian) detections.
-7. **Loudness normalization is now safe.** Gain is capped so peak never exceeds 1.0 (pre-clipping). Default target is -20 LUFS (was -16).
-8. **Corrupted files are auto-filtered.** `_find_audio_files()` skips files < 1KB. ~400 of 410 test files were corrupted — this handles them gracefully.
+## 5. Critical Technical Constraints
 
-## Single Source of Truth for Status
+These are constraints of the environment and will not change soon:
 
-**`ISSUES.md`** is the canonical tracker for all bugs and feature gaps. `README.md`, `ROADMAP.md`, and `REVIEW.md` link to it. Do NOT duplicate status lists in multiple files.
+1. **CTranslate2 does not support Apple Metal/MPS.** Transcription is CPU-only on Mac. `device="mps"` raises `ValueError: unsupported device mps`. Diarization (PyTorch) *can* use MPS.
+2. **WhisperX does not produce alignment scores for pure-number tokens** (e.g., "2024", "1,5"). Acoustic confidence is weakest exactly where errors are most costly. Compensate with hard-rule flagging, not acoustic confidence.
+3. **Whisper `initial_prompt` has a 224-token hard limit.** The current vocabulary estimator assumes ~2 BPE tokens per Norwegian word — naive for compound words. Risk of silent prompt truncation.
+4. **pyannote requires HF authentication.** Run `uv run huggingface-cli login` once. The current `check_hf_auth()` only checks that a token *exists*; it does not verify validity (AUDIT M4).
+5. **Whisper confidence scores are not calibrated.** Useful for ranking, not for probability thresholding.
 
-Open issues (as of 2026-05-29):
-- **#4:** `segmentation_model` in config.yaml is ignored
-- **#5:** Stereo audio collapsed to mono (verify on real files first)
-- **#8:** `editor.py` is placeholder (correctly parked as future)
-- **#9:** `compare.py` alignment is simplistic (time overlap only)
+---
 
-Recently resolved:
-- **#11:** ThreadPoolExecutor default workers changed to 1
-- **#14:** `confidence.py` wired into pipeline (auto-exports review list)
-- **#15:** Language detection confidence threshold added
-- **#16:** Loudness clipping fixed (pre-clipping + -20 LUFS target)
-- **#17:** Corrupted file filtering in batch mode
-- **#18:** SRT speaker label format fixed (inline)
-- **#19:** Beam size increased to 10 for better accuracy
+## 6. Current Reality (verified against code, not document claims)
 
-## Testing
+### Open issues tracked in `ISSUES.md`
+- **#4** `segmentation_model` in `config.yaml` is ignored by `diarize.py`
+- **#5** Stereo collapsed to mono. Verify `has_stereo_separation` on real files before writing channel-split code — many Samsung recordings are mono.
+- **#8** `editor.py` is a placeholder — correctly parked (Subtitle Edit covers the need)
+- **#9** `compare.py` alignment is time-overlap only — correctly parked (use `jiwer` if needed)
 
-```bash
-# Run all tests
-uv run pytest tests/ -v
+### AUDIT.md findings (2026-05-29) not yet tracked in `ISSUES.md`
+These must be added to `ISSUES.md` as concrete entries before being declared "addressed":
+- **K5: `spell_check.py` has no Norwegian dictionary loaded.** The `--spell-check` flag is silent false trust — it accepts the flag and returns "OK" for every word. Either load a real dictionary (e.g., NST or UiB lemma list) or remove the flag from the CLI.
+- **H2:** `preprocess.py` loads audio twice (once in `analyze_audio`, once in `preprocess_audio`).
+- **H4:** `vocabulary.py` token estimate is BPE-naive — risks overflowing the 224-token `initial_prompt` limit on long vocabularies.
+- **M1:** Implicit dependencies (`symspellpy`, `soundfile`) — pin explicitly in `pyproject.toml`.
+- **M2:** `pydub` uses deprecated `audioop`. Time bomb for Python 3.13.
+- **M4:** `check_hf_auth()` does not verify token validity. Use `huggingface_hub.whoami()` for a real check.
 
-# Current state: 38 unit tests pass, 3 warnings (audioop deprecation, ffmpeg not found, numpy divide)
-```
+### Critique of AUDIT.md fixes worth knowing
+- **K1 fix (skip files < 1 KB) is a weak heuristic.** `moov atom not found` can occur on larger corrupted files too. A more robust fix is per-file ffprobe error handling that skips on failure rather than relying on size. Track as a follow-up.
+- **K2 fix (language fallback to "no" on low confidence)** bakes Norwegian into the pipeline. Acceptable for current scope; revisit if multi-language is ever in scope.
 
-Test files:
-- `tests/test_analyze.py` — 8 tests (bandwidth, stereo, metadata, ffprobe)
-- `tests/test_preprocess.py` — 8 tests (resample, mono, filters, loudness)
-- `tests/test_compare.py` — 7 tests (similarity, alignment, disagreement)
-- `tests/test_diarize.py` — 5 tests (auth, dataclass, timeline)
-- `tests/test_confidence.py` — 7 tests (signals, priority, export)
+### `confidence.py` limitations (intentional gaps)
+Wired into the pipeline, but two known gaps remain:
+- **Validation pending.** Priority ranking has never been compared to actual segment-WER. Cannot be done without fasit. First task once fasit exists: compute Spearman correlation or precision@k between priority score and per-segment WER.
+- **Hard-rules pending.** Segments containing digits or capitalized OOV tokens should always be flagged regardless of score — this covers "confidently wrong" failures that scores cannot see.
 
-**Missing:** Integration tests, end-to-end pipeline tests.
+### Recently resolved (per `CHANGELOG.md` v0.1.4)
+#11, #12, #14, #15, #16, #17, #18, #19. See `ISSUES.md` for details.
 
-## Development Workflow
+---
 
-1. **Always run tests before committing:** `uv run pytest tests/ -v`
-2. **Use `uv` for all Python operations:** `uv run python ...`, `uv add <pkg>`, `uv sync`
-3. **Do NOT use pip directly** — it bypasses `uv`'s lockfile.
-4. **Commit message format:** `type: description` (e.g., `fix: handle NaN in stereo correlation`, `feat: wire confidence.py into pipeline`)
-5. **Update `ISSUES.md` when closing issues.** Update `CHANGELOG.md` for user-facing changes.
+## 7. Single Source of Truth — and observed drift
 
-## Key Files for Context
+`ISSUES.md` is canonical for issue status. `README.md`, `ROADMAP.md`, and `REVIEW.md` may reference it but must not contradict it.
 
-| File | Purpose |
-|------|---------|
-| `config.yaml` | All pipeline configuration |
-| `ISSUES.md` | Canonical bug/feature tracker |
-| `REVIEW.md` | Strategic prioritization (Tier 1–5) |
-| `AUDIT.md` | Latest comprehensive audit report |
-| `scripts/evaluate.py` | WER/CER harness (needs ground-truth to be useful) |
-| `src/confidence.py` | Review prioritization (designed but not wired) |
+**Drift currently in the repo (fix before any new feature work):**
+- `README.md` "Gjenstående" lists #14 as "designet og testet, men ikke wiret inn" — but #14 is resolved.
+- `ROADMAP.md` "Remaining" lists #11 — but #11 is resolved.
+- `ROADMAP.md` "Resolved (2026-05-28)" stops at #13. Missing: #11, #14, #15, #16, #17, #18, #19.
+- `README.md` batch example uses `--workers 4`, but default and recommendation is `1` (CPU-bound, GIL).
+- `AUDIT.md` claims "Ingen dokumentasjonsdrift oppdaget" — false. The items above prove it. **Treat audit summaries with the same skepticism as any other source.**
 
-## What NOT to Do
+---
 
-- Do NOT add a web editor (#8) — Subtitle Edit covers the need.
-- Do NOT add REST API / Docker / multi-language support — correctly parked.
-- Do NOT add elaborate CI/CD — targeted tests are sufficient for a personal tool.
-- Do NOT invest in Apple Silicon GPU acceleration for transcription — CTranslate2 limitation, not fixable without switching engine (whisper.cpp/MLX).
-- Do NOT build more tools before measuring — the #1 priority is ground-truth + WER evaluation.
+## 8. Operating Principles (non-negotiable)
 
-## Ground-Truth Workflow (The #1 Priority)
+1. **Measurement before features.** No new feature work begins until fasit exists and `evaluate.py` has produced a baseline WER. If those don't exist, stop and report — do not invent test data, do not fabricate numbers.
+2. **Bias toward closing, not opening.** New entries in `ISSUES.md` require justification tied to an observed failure mode on real audio.
+3. **No self-marking-done.** Mark an item resolved only when the verification in §10 passes. Cite the evidence (commit hash, test names, WER numbers) in `CHANGELOG.md`.
+4. **Honest reporting.** Regressions, failed tests, or surprising behavior on real audio are stated explicitly. Never paper over.
+5. **Distrust audits — including your own.** Verify against code, not against doc summaries. An audit claiming "no drift" is not evidence of no drift.
+6. **Findings introduced during an audit must be added to `ISSUES.md` before being declared addressed.** Floating findings (like AUDIT K5) are not tracked work.
+
+---
+
+## 9. Priority Queue
+
+At session start, pick the next task using this order. Stop at the first item that applies:
+
+1. **Tier 1 — fasit + first WER measurement on a real recording.** Blocks all other work. Without it, every change below is unverifiable.
+2. **Confidence validation** — once fasit exists, compute Spearman / precision@k between `confidence.py` priority score and per-segment WER. If correlation is weak, fix the signal mix before trusting the review list.
+3. **Confidence hard-rules** — always-flag segments containing digit tokens or capitalized OOV tokens, regardless of score.
+4. **K5 (spell_check) decision** — either load a real Norwegian dictionary, or remove `--spell-check` from the CLI. Current state is silent false trust. Add to `ISSUES.md` first.
+5. **Knob tuning against fasit** — each experiment must produce before/after WER in `CHANGELOG.md`:
+   - main vs verbatim model
+   - `condition_on_previous_text` on/off
+   - vocabulary on/off
+   - second comparison model on/off
+   - `--spell-check` on/off (only meaningful after K5 is resolved)
+6. **Documentation reconciliation pass** — fix the drift listed in §7.
+7. **#4** — remove `segmentation_model` from `config.yaml` and document that pyannote 3.1 bundles its own.
+8. **AUDIT findings not yet tracked** (H2, H4, M1, M2, M4, plus follow-up on K1's weak heuristic) — add to `ISSUES.md` first, then schedule.
+9. **#5 stereo** — first run `analyze.py` on real files and check `has_stereo_separation`. If mono, close without writing code.
+
+Anything not on this list and not in `ISSUES.md` is out of scope. Items explicitly deferred in `REVIEW.md` (web editor #8, DTW alignment #9, Apple Silicon GPU for transcription, REST API, Docker, multi-language, fine-tuning, full CI) are not to be touched.
+
+---
+
+## 10. Definition of Done (by task type)
+
+- **Bug fix:** root cause identified; fix applied; unit test added or updated; full suite passes; behavior verified on at least one real recording when relevant.
+- **Feature:** wired into pipeline or CLI; unit tests added; run on at least one real recording; output inspected; inspection summarized in commit message and `CHANGELOG.md`.
+- **Accuracy change:** before/after WER computed against the fasit; both numbers cited in `CHANGELOG.md`. If WER did not improve, the change is reverted or explicitly justified with a non-WER reason.
+- **Documentation:** no contradictions remain between `ISSUES.md`, `README.md`, `ROADMAP.md`, `REVIEW.md`, `AUDIT.md`, and `CHANGELOG.md`. Verify with §12.
+
+---
+
+## 11. What "Test Run" Means
+
+`pytest` alone is not a test run. The full run is all four steps:
+
+1. `uv run pytest -q` — all tests pass.
+2. Run the full pipeline on at least one real recording from the operator's working set.
+3. Run `scripts/evaluate.py` against the fasit if it exists. Record WER and CER.
+4. Manually inspect the first 30 seconds of output. Note any visible failure modes: hallucinations, dropped speaker labels, misaligned timestamps, missing scores on digit tokens.
+
+---
+
+## 12. Audit Checklist (run before declaring session complete)
+
+Do the actual checks — do not trust summaries:
+
+1. **Stale "Open" issues.** Grep the code. Any issue marked Open but already fixed? Mark resolved, cite the commit.
+2. **Stale "Resolved" issues.** Any issue marked Resolved where the bug is still present in code? Reopen.
+3. **README drift.** Does `README.md` "Gjenstående" or "Limitations" mention anything `ISSUES.md` marks resolved?
+4. **ROADMAP drift.** Does `ROADMAP.md` "Remaining" mention anything resolved? Does "Resolved" include all resolved issues?
+5. **Example drift.** Do CLI examples in `README.md` match current defaults (e.g., `--workers`)?
+6. **Roadmap checkbox honesty.** Any `[x]` whose underlying artifact does not exist?
+7. **WER trend.** If this session touched the accuracy path, record before/after in `CHANGELOG.md`.
+8. **Scope creep.** Did this session touch anything on the deferred list? Justify or revert.
+9. **Floating audit findings.** Were any findings from an audit (yours or another agent's) added to `ISSUES.md` as tracked entries before being declared addressed?
+
+---
+
+## 13. Git Discipline
+
+- One logical change per commit. Use conventional prefixes: `fix:`, `feat:`, `docs:`, `test:`, `refactor:`, `chore:`.
+- Commit message states what changed, why, and — for accuracy changes — before/after WER.
+- `uv run pytest -q` before every commit. Do not commit on a red suite.
+- Push after each commit unless explicitly told otherwise.
+- Never force-push.
+
+---
+
+## 14. Ground-Truth Workflow (the #1 priority)
 
 To measure transcription quality:
 
-1. Manually transcribe 5–10 minutes of a real recording perfectly → `testdata/fasit.txt`
-2. Run full pipeline on the same recording
-3. Run `uv run python scripts/evaluate.py --reference fasit.txt --hypothesis output/.../recording.srt`
-4. Inspect WER, CER, and error breakdown (substitutions, deletions, insertions)
-5. Use those numbers to validate every subsequent change (vocabulary, config tuning, confidence calibration).
+1. Manually transcribe 5–10 minutes of a real recording, perfectly, to `testdata/fasit.txt`.
+2. Run the full pipeline on the same recording.
+3. `uv run python scripts/evaluate.py --reference testdata/fasit.txt --hypothesis output/<run>/recording.srt`.
+4. Record WER, CER, and a brief error-mode summary (names, numbers, dialect, crosstalk, hallucinations).
+5. Use those numbers as the gate for every subsequent change.
 
-Without this loop, all optimization is guesswork.
+Without this loop, all optimization is guesswork. This is the single highest-leverage action available right now.
+
+---
+
+## 15. What NOT to Do
+
+- Do not enable `--spell-check` by default — it currently does nothing (AUDIT K5).
+- Do not build a web editor (#8) — Subtitle Edit covers the need.
+- Do not add DTW or other fancy alignment in `compare.py` (#9) — `jiwer` is sufficient.
+- Do not add REST API, Docker, multi-language support, or fine-tuning.
+- Do not build elaborate CI/CD — targeted unit tests are sufficient for a personal tool.
+- Do not chase Apple Silicon GPU acceleration for transcription — CTranslate2 limitation, not a code fix.
+- Do not build more tools or modules before fasit + first WER measurement exist.
+- Do not trust any document — verify against code.
+- Do not mark an audit finding "addressed" without first adding it to `ISSUES.md` as a tracked entry.
+
+---
+
+## 16. End-of-Session Report
+
+Produce a short written summary covering:
+
+- What was attempted and what is actually done (with evidence: commit hash, test names, WER numbers).
+- WER before/after if applicable.
+- Issues opened, closed, or reconciled, with reasons.
+- Drift caught and fixed during the audit step.
+- What you would pick next, per §9.
+- Anything you were unsure about or chose not to do, and why.
+
+If any operating principle in §8 was bent or violated during the session, state that at the top of the report.
