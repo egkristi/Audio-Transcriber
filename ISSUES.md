@@ -164,6 +164,46 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 - **Fix:** Added explicit check in `_init_symspell()`: if no dictionary is loaded, set `symspell_available = False` and log a clear warning explaining that spell-checking is disabled without a Norwegian word list. Added inline comment documenting why no dictionary is bundled (licensing restrictions for Norwegian word lists) and how to enable it (download NST/UiB word list and call `load_dictionary()`).
 - **Rationale:** Norwegian dictionaries have licensing restrictions. Bundling one is non-trivial. Better to be honest that the feature is disabled than to silently do nothing.
 
+### #22: `preprocess.py` loads audio twice — unnecessary I/O and memory use
+- **File:** `src/preprocess.py`, `src/analyze.py`
+- **Status:** Open
+- **Description:** `analyze_audio()` runs `librosa.load(..., mono=True)`. Then `preprocess_audio()` runs `librosa.load(..., mono=False)`. The same file is loaded twice.
+- **Impact:** Unnecessary I/O and memory use. For batch of long recordings this is noticeable.
+- **Fix:** Cache `audio_data` in `AudioMetadata`, or pass it explicitly from analyze to preprocess.
+- **Reference:** AUDIT.md H2
+
+### #23: `vocabulary.py` token estimate is BPE-naive — risks silent prompt truncation
+- **File:** `src/vocabulary.py`
+- **Status:** Open
+- **Description:** `generate_initial_prompt()` estimates "2 tokens per word". Whisper uses BPE — common words can be 1 token, rare compound words 3–5 tokens. `max_tokens=100` is hardcoded. The 224-token `initial_prompt` limit can be silently exceeded.
+- **Impact:** Vocabulary injection may be truncated without warning, reducing effectiveness.
+- **Fix:** Use `transformers.AutoTokenizer` for actual token counting, or set a conservative limit (~150 tokens) and document.
+- **Reference:** AUDIT.md H4
+
+### #24: Implicit dependencies (`symspellpy`, `soundfile`) not pinned in `pyproject.toml`
+- **File:** `pyproject.toml`
+- **Status:** Resolved (2026-05-29)
+- **Description:** `symspellpy` and `soundfile` are imported in the code but not listed in `dependencies`. They are currently transitive dependencies, but should be explicit.
+- **Impact:** Fresh installs may break if transitive dependency versions change.
+- **Fix:** Added `symspellpy>=6.7.0` and `soundfile>=0.12.0` to `dependencies` in `pyproject.toml`.
+- **Reference:** AUDIT.md M1
+
+### #25: `pydub` uses deprecated `audioop` — Python 3.13 time bomb
+- **File:** `pyproject.toml`, `src/preprocess.py`
+- **Status:** Open
+- **Description:** `pydub` imports `audioop` which is "deprecated and slated for removal in Python 3.13". `requires-python = ">=3.11,<3.13"` protects now, but is a time bomb.
+- **Impact:** Project is locked to Python 3.11–3.12. Cannot upgrade to 3.13.
+- **Fix:** Monitor pydub updates; consider migrating I/O to `soundfile`+`librosa`.
+- **Reference:** AUDIT.md M2
+
+### #26: `check_hf_auth()` does not verify token validity — only checks existence
+- **File:** `src/diarize.py`
+- **Status:** Resolved (2026-05-29)
+- **Description:** `check_hf_auth()` checks that a token *exists* (file or env var), but does not verify that the token is valid. User gets "auth OK" but pyannote call may still fail with 403/401.
+- **Impact:** Misleading auth status; opaque failures downstream.
+- **Fix:** `check_hf_auth()` now calls `huggingface_hub.whoami(token=token)` to verify token validity before returning True. Logs clear error if token is invalid.
+- **Reference:** AUDIT.md M4
+
 ## Resolved
 
 - #1, #2, #3, #4, #5, #6, #7, #9, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21

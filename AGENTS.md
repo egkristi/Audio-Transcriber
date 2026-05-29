@@ -64,19 +64,16 @@ These are constraints of the environment and will not change soon:
 ## 6. Current Reality (verified against code, not document claims)
 
 ### Open issues tracked in `ISSUES.md`
-- **#4** `segmentation_model` in `config.yaml` is ignored by `diarize.py`
-- **#5** Stereo collapsed to mono. Verify `has_stereo_separation` on real files before writing channel-split code — many Samsung recordings are mono.
 - **#8** `editor.py` is a placeholder — correctly parked (Subtitle Edit covers the need)
-- **#9** `compare.py` alignment is time-overlap only — correctly parked (use `jiwer` if needed)
+- **#22** `preprocess.py` loads audio twice — cache audio_data or pass explicitly from analyze to preprocess
+- **#23** `vocabulary.py` token estimate is BPE-naive — risks silent `initial_prompt` truncation
+- **#25** `pydub` uses deprecated `audioop` — Python 3.13 time bomb
 
-### AUDIT.md findings (2026-05-29) not yet tracked in `ISSUES.md`
-These must be added to `ISSUES.md` as concrete entries before being declared "addressed":
-- **K5: `spell_check.py` has no Norwegian dictionary loaded.** The `--spell-check` flag is silent false trust — it accepts the flag and returns "OK" for every word. Either load a real dictionary (e.g., NST or UiB lemma list) or remove the flag from the CLI.
-- **H2:** `preprocess.py` loads audio twice (once in `analyze_audio`, once in `preprocess_audio`).
-- **H4:** `vocabulary.py` token estimate is BPE-naive — risks overflowing the 224-token `initial_prompt` limit on long vocabularies.
-- **M1:** Implicit dependencies (`symspellpy`, `soundfile`) — pin explicitly in `pyproject.toml`.
-- **M2:** `pydub` uses deprecated `audioop`. Time bomb for Python 3.13.
-- **M4:** `check_hf_auth()` does not verify token validity. Use `huggingface_hub.whoami()` for a real check.
+### Resolved issues (still worth knowing about)
+- **#4** `segmentation_model` removed from `config.yaml` — pyannote 3.1 bundles its own
+- **#5** Stereo channel-splitting implemented (`split_stereo_channels()`), but pipeline still processes averaged mono. Full channel-aware orchestration is future work.
+- **#9** `compare.py` now uses `jiwer.wer()` for word-level similarity — time-overlap alignment remains appropriate for segment-level pairing
+- **#21** `spell_check.py` explicitly disabled when no dictionary loaded — honest failure instead of silent no-op
 
 ### Critique of AUDIT.md fixes worth knowing
 - **K1 fix (skip files < 1 KB) is a weak heuristic.** `moov atom not found` can occur on larger corrupted files too. A more robust fix is per-file ffprobe error handling that skips on failure rather than relying on size. Track as a follow-up.
@@ -87,8 +84,8 @@ Wired into the pipeline, but two known gaps remain:
 - **Validation pending.** Priority ranking has never been compared to actual segment-WER. Cannot be done without fasit. First task once fasit exists: compute Spearman correlation or precision@k between priority score and per-segment WER.
 - **Hard-rules pending.** Segments containing digits or capitalized OOV tokens should always be flagged regardless of score — this covers "confidently wrong" failures that scores cannot see.
 
-### Recently resolved (per `CHANGELOG.md` v0.1.4)
-#11, #12, #14, #15, #16, #17, #18, #19. See `ISSUES.md` for details.
+### Recently resolved (per `CHANGELOG.md` v0.1.4–v0.1.6)
+#11, #12, #14, #15, #16, #17, #18, #19, #20, #21. See `ISSUES.md` for details.
 
 ---
 

@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-05-29
+
+### Added
+- **Explicit dependencies** (`pyproject.toml`) — pinned `symspellpy>=6.7.0` and `soundfile>=0.12.0` that were previously implicit transitive dependencies (ISSUES.md #24 / AUDIT.md M1).
+- **HF token validation** (`src/diarize.py`) — `check_hf_auth()` now calls `huggingface_hub.whoami()` to verify token validity, not just existence. Logs clear error if token is invalid (ISSUES.md #26 / AUDIT.md M4).
+
+### Changed
+- **README.md** — updated "Løst" section with all resolved items through v0.1.6; fixed batch example to use `--workers 1` instead of `--workers 4`.
+- **AGENTS.md** — updated §6 Current Reality with new open issues (#22–#26) and resolved issues (#4, #5, #9, #21).
+
+### Fixed
+- **Documentation drift** (AGENTS.md §7 / AUDIT.md drift list):
+  - `README.md` "Gjenstående" no longer lists resolved issues #11, #14
+  - `ROADMAP.md` "Remaining" no longer lists resolved issues
+  - `ROADMAP.md` "Resolved" now includes all resolved issues through #21
+  - Batch example uses `--workers 1` matching default
+- **ISSUES.md** — added 5 new tracked issues from AUDIT.md findings: #22 (H2), #23 (H4), #24 (M1), #25 (M2), #26 (M4).
+
+## [0.1.6] - 2026-05-29
+
 ### Added
 - Initial project setup with pyproject.toml and uv configuration
 - ROADMAP.md for feature tracking

@@ -22,26 +22,34 @@ Denne repoen inneholder en fungerende proof-of-concept pipeline med de viktigste
 
 ## Viktige auditfunn
 
-### Løst (2026-05-28)
+### Løst (2026-05-28 til 2026-05-29)
 - ✅ `transcribe.py` sender nå `beam_size`, `vad_filter`, `condition_on_previous_text` og `initial_prompt` videre til WhisperX-kallet.
 - ✅ `analyze.py` bruker nå `faster_whisper` direkte for språkdeteksjon (cachet, 30s-klipp) i stedet for standalone `whisper`.
 - ✅ `diarize.py` har nå `check_hf_auth()`-hjelper med graceful feilmelding ved manglende HF-token.
 - ✅ `database.py`, `spell_check.py` og `vocabulary.py` er nå integrert i pipeline via `--use-database`, `--spell-check` og `--vocabulary-file`.
-- ✅ 31 enhetstester er på plass for `analyze`, `preprocess`, `compare` og `diarize`.
+- ✅ 38 enhetstester er på plass for `analyze`, `preprocess`, `compare`, `diarize` og `confidence`.
 - ✅ `scripts/evaluate.py` — WER/CER-evalueringsharness med `jiwer` for ground-truth-sammenligning.
 - ✅ Device auto-detection: `cuda` for transkripsjon (CTranslate2), `cuda`/`mps` for diarization (PyTorch).
-- ✅ `src/confidence.py` — konfidens-flagging med flere deterministiske signaler (alignment score, avg_logprob, no_speech_prob, compression_ratio, temperature, word probability, model disagreement, SNR). Prioriterer segmenter for manuell review.
+- ✅ `src/confidence.py` — konfidens-flagging med 20 hard-rules, wiret inn i pipeline; eksporterer `*_review_list.txt` med alle segmenter.
+- ✅ `segmentation_model` fjernet fra `config.yaml` (pyannote 3.1 bundler egen segmentering).
+- ✅ `ThreadPoolExecutor` default `--workers` endret fra 4 til 1 (GIL-safe for CPU-bound inferens).
+- ✅ `compare.py` bruker nå `jiwer.wer()` for ord-nivå similarity (bedre enn `SequenceMatcher`).
+- ✅ Stereo kanal-splitting implementert (`split_stereo_channels()`), med advarsel når `has_stereo_separation=True`.
+- ✅ Loudness clipping fikset (pre-clipping + -20 LUFS target).
+- ✅ Språkdeteksjon med confidence threshold (fallback til "no" når confidence < 0.5).
+- ✅ Korrupte filer filtreres ut (<1KB) i batch-modus.
+- ✅ SRT speaker format fikset (inline `SPEAKER_00: tekst`).
+- ✅ Per-segment og per-file confidence levels implementert.
+- ✅ Norsk tekst-normalisering (`src/normalize.py`) med automatisk SRT-regenerering.
+- ✅ Default norsk vokabular (`data/norwegian_vocabulary.json`) auto-lastet for `initial_prompt`.
 
 ### Gjenstående
 Se `ISSUES.md` for fullstendig og oppdatert liste over åpne og løste problemer. Nedenfor er et sammendrag:
 
-- **#4:** `config.yaml` inneholder `segmentation_model`, men koden bruker ikke dette feltet.
-- **#5:** Stereo-innhold behandles ved å slå sammen kanaler til mono — verifiser på faktiske filer først.
-- **#11:** `ThreadPoolExecutor` i batch-modus gir ikke ekte parallellisme for CPU-tunge oppgaver pga. Python GIL.
-- **#14:** `src/confidence.py` er designet og testet, men ikke wiret inn i pipeline.
-- **#8:** `editor.py` er fortsatt kun en SRT-eksportfunksjon, ikke en ekte web-editor.
-- **#9:** `compare.py` bruker fortsatt enkel tids-overlap-alignment og `SequenceMatcher`.
-- Ingen CI-pipeline (GitHub Actions) eller integrasjonstester.
+- **#8:** `editor.py` er fortsatt kun en SRT-eksportfunksjon, ikke en ekte web-editor — korrekt parkert, Subtitle Edit dekker behovet.
+- **#5:** Stereo kanal-splitting er implementert, men pipeline kjører fortsatt på averaged mono. Full kanal-integrasjon er fremtidig arbeid.
+- **#21:** Norsk stavekontroll krever ekstern ordbok (NST/UiB) — feature er deaktivert inntil ordbok er på plass.
+- Ingen CI-pipeline (GitHub Actions) — over-scope for personlig verktøy.
 
 ## Rask installasjon
 
@@ -87,7 +95,7 @@ uv run python scripts/run_pipeline.py \
   --output-dir ./output \
   --diarize \
   --compare-models \
-  --workers 4
+  --workers 1
 ```
 
 ### Kjør enkeltsteg

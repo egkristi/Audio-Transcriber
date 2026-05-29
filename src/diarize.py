@@ -18,30 +18,47 @@ logger = get_logger("diarize")
 
 def check_hf_auth() -> bool:
     """
-    Verify that a Hugging Face authentication token is available.
+    Verify that a Hugging Face authentication token is available and valid.
     
-    Returns True if a token is found, otherwise logs a helpful error
+    Returns True if a valid token is found, otherwise logs a helpful error
     and returns False.
+    
+    Note: This now performs a lightweight API call (whoami) to verify
+    token validity, not just existence. See ISSUES.md #26.
     """
+    token = None
     try:
         from huggingface_hub import HfFolder
         token = HfFolder.get_token()
-        if token:
-            return True
     except Exception:
         pass
 
     # Also check environment variable
     import os
-    if os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN"):
-        return True
+    if not token:
+        token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN")
 
-    logger.error(
-        "Hugging Face authentication token not found. "
-        "Please run: uv run huggingface-cli login\n"
-        "Or set the HF_TOKEN environment variable."
-    )
-    return False
+    if not token:
+        logger.error(
+            "Hugging Face authentication token not found. "
+            "Please run: uv run huggingface-cli login\n"
+            "Or set the HF_TOKEN environment variable."
+        )
+        return False
+
+    # Verify token validity with a lightweight API call
+    try:
+        from huggingface_hub import whoami
+        whoami(token=token)
+        logger.debug("Hugging Face token validated successfully")
+        return True
+    except Exception as e:
+        logger.error(
+            f"Hugging Face token found but invalid: {e}\n"
+            "Please run: uv run huggingface-cli login\n"
+            "Or check that your HF_TOKEN environment variable is correct."
+        )
+        return False
 
 
 @dataclass
