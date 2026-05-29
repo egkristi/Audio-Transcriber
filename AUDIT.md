@@ -79,7 +79,7 @@ Prosjektet er nå **verifisert på ekte data**. Pipeline kjører end-to-end på 
 ## Høy-prioritet funn (påvirker nøyaktighet eller brukeropplevelse)
 
 ### H1: Ingen ground-truth fasit — WER-harness er ubrukt
-- **Status:** REVIEW.md Tier 1 — den eneste tingen som betyr noe
+- **Status:** Tier 1 (strategisk prioritet) — den eneste tingen som betyr noe
 - **Bevis:** `scripts/evaluate.py` eksisterer og er komplett (jiwer-basert). Ingen `testdata/*.txt` fasit-fil finnes. Ingen WER-måling har blitt kjørt.
 - **Impact:** All "forbedring" er uverifiserbar. Man vet ikke om vocabulary injection, spell-check, eller model A vs B faktisk senker WER.
 - **Fix:** Manuelt transkriber 5–10 minutter av `testdata/*.m4a`. Lagre som `testdata/fasit.txt`. Kjør pipeline + `evaluate.py`. Dette er nå den viktigste oppgaven.
@@ -163,7 +163,7 @@ Prosjektet er nå **verifisert på ekte data**. Pipeline kjører end-to-end på 
 ## Lav-prioritet funn (forbedringer)
 
 ### L1: `editor.py` er fortsatt placeholder
-- **Status:** Issue #8 — Åpen, men korrekt parkert per REVIEW.md
+- **Status:** Issue #8 — Åpen, men korrekt parkert (Tier 5)
 - **Fix:** Ingen — Subtitle Edit dekker behovet.
 
 ### L2: `database.py` har ingen query-API for korrektur-analyse
@@ -200,7 +200,7 @@ Prosjektet er nå **verifisert på ekte data**. Pipeline kjører end-to-end på 
 | `README.md` | ✅ Oppdatert | Lenker til ISSUES.md som sannhetskilde |
 | `ROADMAP.md` | ✅ Oppdatert | "Remaining" renset for løste items |
 | `ISSUES.md` | ✅ Oppdatert | Eneste sannhetskilde for status |
-| `REVIEW.md` | ✅ Oppdatert | Tier 1–5 prioritering |
+| `REVIEW.md` | ❌ Slettet | Innhold flyttet til AUDIT.md «Strategisk gjennomgang» |
 | `CHANGELOG.md` | ✅ Oppdatert | v0.1.0–v0.1.5 |
 | `AUDIT.md` | ✅ Denne filen | Post-fix audit etter real-data-testing |
 | `.instructions.md` | ✅ Oppdatert | AI agent kontekst |
@@ -215,6 +215,64 @@ Prosjektet er nå **verifisert på ekte data**. Pipeline kjører end-to-end på 
 2. **🔴 Kjør pipeline + evaluate.py** — få første reelle WER-tall
 3. **🟡 Legg til integrasjonstest** — en end-to-end test på syntetisk lyd (mock whisperx)
 4. **🟡 Fiks `performance.device` i config** — fjern eller dokumenter at auto-deteksjon overstyres
+
+---
+
+## Strategisk gjennomgang (fra REVIEW.md, 28. mai 2026)
+
+> **Hovedfunn:** Du har bygget målestokken, men ikke målt. `scripts/evaluate.py` eksisterer, men ingen fasit er laget og ingen WER er målt. Dette er nå den eneste tingen som betyr noe.
+
+### Tier 1 — Lukk nøyaktighetsloopen (før mer kode)
+
+| Oppgave | Hvorfor |
+|---------|---------|
+| Lag fasit på ekte opptak | Eneste umålte forutsetning. Uten den er resten gjetning. |
+| Kjør full pipeline på samme opptak + `evaluate.py` | Gir første reelle WER-tall. |
+| Inspiser feilmodusene | Avgjør om problemet er navn, tall, kryssprat, dialekt eller noe helt annet — det styrer alt videre. |
+
+### Tier 2 — `confidence.py`: fullfør, men *valider* den
+
+**2a. Valider at prioriteringen faktisk korrelerer med feil**
+- Regn per-segment WER mot fasit.
+- Mål **rangkorrelasjon** (Spearman) mellom priority-score og segment-WER, eller **precision@k**.
+- Hvis korrelasjonen er svak, er signal-miksen feil — juster før du stoler på den.
+
+**2b. «Skråsikkert feil»-gapet trenger en *regel*, ikke bare en advarsel**
+- Segmenter som inneholder **tall/siffer** → alltid flagg.
+- Segmenter med **stor forbokstav-tokens utenfor vokabularet** (sannsynlige egennavn) → alltid flagg.
+
+**2c. Kjent WhisperX-svakhet som rammer akkurat tallene**
+WhisperX gir som standard **ikke** ord-nivå timestamps/score for tokens som kun er tall — alignment-modellen er fonem-basert. **Ikke stol på alignment-score for numeriske tokens — flagg dem med regel i stedet.**
+
+### Tier 2b — Tun knottene mot fasiten (mest config, lite kode)
+
+Når fasiten finnes, er disse plutselig målbare:
+- **Verbatim vs. main** — hvilken gir lavest WER på *dine* opptak?
+- **`condition_on_previous_text` på/av** — på kryssprat kan «på» forplante hallusinering.
+- **Vocabulary på/av** — bekreft at `initial_prompt` faktisk senker WER.
+- **Andre modell (Steg 4) på/av** — dropp hvis én modell + vocabulary gir lav WER.
+- **`--spell-check` på/av** — *dette kan gjøre WER verre.* Norsk stavekontroll kan «rette» korrekte egennavn til feil vanlige ord.
+
+> **Interaksjon å være obs på:** verbatim-modellen er små-bokstavert uten tegnsetting. Injiserer du vocabulary med stor forbokstav via `initial_prompt`, kan effekten bli mindre enn ventet.
+
+### Tier 3 — Reelle bugs som påvirker korrekthet/bruk
+
+- **#11 (ThreadPoolExecutor + GIL):** Reell bug — tråder parallelliserer ikke CPU-bundet inferens. **Enkleste korrekte fiks:** sett default `--workers 1`, og dokumenter at høyere kun gir mening på CUDA med nok minne.
+- **#4 (`segmentation_model` ignoreres):** pyannote 3.1 bundler egen segmentering. Lavt prioritert — dokumenter at feltet ikke er konfigurerbart og fjern det fra `config.yaml`.
+
+### Tier 4 — Verifiser før du bygger
+
+- **#5 (stereo):** Fortsatt ikke verifisert. Kjør `analyze.py` på de faktiske filene og sjekk `has_stereo_separation`. Samsung-opptak er typisk mono — er de det, lukk #5 uten å skrive en linje kode.
+
+### Tier 5 — Korrekt utsatt (ingen endring)
+
+Web-editor (#8), DTW-alignment (#9), Apple Silicon-akselerasjon utover CPU (#10), full CI (Phase 7), REST API / Docker / flerspråk. Alt riktig parkert. Ikke rør før kjernen leverer målt lav WER.
+
+### Hvis du bare gjør tre ting
+
+1. **Lag fasit + kjør pipelinen på ett ekte opptak + mål WER.** Alt annet venter på dette.
+2. **Fullfør `confidence.py` med valideringsmetrikk (Spearman/precision@k) + hard-regler for tall og egennavn.**
+3. **Reconciler dokumentasjonen** til én sannhetskilde (`ISSUES.md`), og lukk #12.
 
 ---
 

@@ -1,12 +1,12 @@
 # AGENT.md — Audio-Transcriber AI Agent Instructions
 
-> Read this file first. Then read `REVIEW.md`, `AUDIT.md`, `ISSUES.md`, and the latest `CHANGELOG.md` entry. **Verify the current state against the actual code before trusting any document — drift has been observed in this repo, including in audit reports.**
+> Read this file first. Then read `AUDIT.md`, `ISSUES.md`, and the latest `CHANGELOG.md` entry. **Verify the current state against the actual code before trusting any document — drift has been observed in this repo, including in audit reports.**
 
 ---
 
 ## 1. Mission
 
-Drive the project toward measurably accurate Norwegian transcription of real call recordings on the operator's machine. Strategic guidance lives in `REVIEW.md` and is canonical.
+Drive the project toward measurably accurate Norwegian transcription of real call recordings on the operator's machine. Strategic guidance lives in `AUDIT.md` §«Strategisk gjennomgang» and is canonical.
 
 The non-negotiable goal: a fasit (ground-truth transcript) plus a baseline WER number on a real recording. Without those, every "improvement" is speculation.
 
@@ -94,7 +94,7 @@ Wired into the pipeline, but two known gaps remain:
 
 ## 7. Single Source of Truth — and observed drift
 
-`ISSUES.md` is canonical for issue status. `README.md`, `ROADMAP.md`, and `REVIEW.md` may reference it but must not contradict it.
+`ISSUES.md` is canonical for issue status. `README.md`, `ROADMAP.md`, and `AUDIT.md` may reference it but must not contradict it.
 
 **Drift currently in the repo (fix before any new feature work):**
 - `README.md` "Gjenstående" lists #14 as "designet og testet, men ikke wiret inn" — but #14 is resolved.
@@ -135,7 +135,7 @@ At session start, pick the next task using this order. Stop at the first item th
 8. **AUDIT findings not yet tracked** (H2, H4, M1, M2, M4, plus follow-up on K1's weak heuristic) — add to `ISSUES.md` first, then schedule.
 9. **#5 stereo** — first run `analyze.py` on real files and check `has_stereo_separation`. If mono, close without writing code.
 
-Anything not on this list and not in `ISSUES.md` is out of scope. Items explicitly deferred in `REVIEW.md` (web editor #8, DTW alignment #9, Apple Silicon GPU for transcription, REST API, Docker, multi-language, fine-tuning, full CI) are not to be touched.
+Anything not on this list and not in `ISSUES.md` is out of scope. Items explicitly deferred in `AUDIT.md` Tier 5 (web editor #8, DTW alignment #9, Apple Silicon GPU for transcription, REST API, Docker, multi-language, fine-tuning, full CI) are not to be touched.
 
 ---
 
@@ -144,7 +144,7 @@ Anything not on this list and not in `ISSUES.md` is out of scope. Items explicit
 - **Bug fix:** root cause identified; fix applied; unit test added or updated; full suite passes; behavior verified on at least one real recording when relevant.
 - **Feature:** wired into pipeline or CLI; unit tests added; run on at least one real recording; output inspected; inspection summarized in commit message and `CHANGELOG.md`.
 - **Accuracy change:** before/after WER computed against the fasit; both numbers cited in `CHANGELOG.md`. If WER did not improve, the change is reverted or explicitly justified with a non-WER reason.
-- **Documentation:** no contradictions remain between `ISSUES.md`, `README.md`, `ROADMAP.md`, `REVIEW.md`, `AUDIT.md`, and `CHANGELOG.md`. Verify with §12.
+- **Documentation:** no contradictions remain between `ISSUES.md`, `README.md`, `ROADMAP.md`, `AUDIT.md`, and `CHANGELOG.md`. Verify with §12.
 
 ---
 

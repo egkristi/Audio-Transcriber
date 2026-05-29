@@ -140,7 +140,7 @@ Audio-Transcriber/
 ## Videre utvikling
 
 Se `ROADMAP.md` for detaljer om neste prioriteringer og oppgaver.  
-Se `REVIEW.md` for strategisk gjennomgang med anbefalt rekkefølge og elementer som bør utsettes.
+Se `AUDIT.md` §«Strategisk gjennomgang» for strategisk gjennomgang med anbefalt rekkefølge og elementer som bør utsettes.
 
 ## Lisens
 

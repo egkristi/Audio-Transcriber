@@ -98,7 +98,7 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 - Ingen CI-pipeline — over-scope for personlig verktøy
 - **#21:** Norwegian spell-checking krever ekstern ordbok (NST/UiB) — feature er deaktivert inntil ordbok er på plass
 
-## Near-term priorities (revidert etter REVIEW.md)
+## Near-term priorities (revidert etter AUDIT.md §Strategisk gjennomgang)
 
 1. **Ground-truth + WER-harness** (`jiwer`). Transkriber 5–10 minutter manuelt → fasit. Mål WER før alle andre endringer. ✅ `scripts/evaluate.py` på plass.
 2. **Issue #1** — koble konfig-parametrene til WhisperX-kallet. ✅ Løst.
