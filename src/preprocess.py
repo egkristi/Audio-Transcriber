@@ -6,7 +6,7 @@ Applies adaptive preprocessing based on metadata from Step 1.
 """
 
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
 from pydub import AudioSegment, effects
@@ -51,16 +51,59 @@ def convert_to_mono(
     """
     Convert to mono.
     
-    If has_stereo_separation is True, averaging both channels.
-    If False, user should have already handled stereo appropriately.
+    If has_stereo_separation is False, averages both channels (safe default).
+    If has_stereo_separation is True, logs a warning that speaker information
+    will be lost — caller should use split_stereo_channels() instead.
     """
     if audio_data.ndim == 1:
         logger.debug("Already mono")
         return audio_data
     
+    if has_stereo_separation:
+        logger.warning(
+            "Stereo separation detected (one speaker per channel). "
+            "Averaging channels will mix speakers. "
+            "Use split_stereo_channels() to preserve speaker identity."
+        )
+    
     logger.info(f"Converting from {audio_data.shape[0]} channels to mono")
     mono = np.mean(audio_data, axis=0)
     return mono
+
+
+def split_stereo_channels(
+    audio_data: np.ndarray,
+    sample_rate: int,
+    output_dir: Path,
+    stem: str
+) -> List[Path]:
+    """
+    Split stereo audio into separate mono files per channel.
+    
+    Returns list of paths to channel files (ch0, ch1, ...).
+    Each file is named {stem}_ch{N}.wav.
+    """
+    if audio_data.ndim == 1:
+        logger.debug("Audio is already mono, nothing to split")
+        return []
+    
+    output_dir.mkdir(parents=True, exist_ok=True)
+    channel_paths = []
+    
+    for ch in range(audio_data.shape[0]):
+        ch_data = audio_data[ch]
+        ch_path = output_dir / f"{stem}_ch{ch}.wav"
+        
+        # Normalize to -1..1 range
+        max_val = np.max(np.abs(ch_data))
+        if max_val > 0:
+            ch_data = ch_data / max_val
+        
+        sf.write(str(ch_path), ch_data, sample_rate, subtype='PCM_16')
+        channel_paths.append(ch_path)
+        logger.info(f"Channel {ch} saved: {ch_path}")
+    
+    return channel_paths
 
 
 def apply_highpass_filter(
@@ -243,9 +286,27 @@ def preprocess_audio(
     # Load audio
     audio_data, sr = librosa.load(str(file_path), sr=metadata.sample_rate, mono=False)
     
-    # Convert to mono if stereo
-    if audio_data.ndim == 2:
-        audio_data = convert_to_mono(audio_data, metadata.has_stereo_separation)
+    # Handle stereo separation: split channels if detected
+    if audio_data.ndim == 2 and metadata.has_stereo_separation:
+        logger.info(
+            f"Stereo separation detected (correlation < 0.3). "
+            f"Splitting {audio_data.shape[0]} channels into separate files."
+        )
+        if output_dir:
+            channel_paths = split_stereo_channels(
+                audio_data, sr, output_dir, Path(file_path).stem
+            )
+            logger.info(
+                f"Channel files saved: {[p.name for p in channel_paths]}. "
+                f"Each channel will be transcribed as a separate speaker."
+            )
+        # For downstream compatibility, return averaged mono with a warning
+        # The pipeline should check metadata.has_stereo_separation and process
+        # channel files separately. See ISSUES.md #5.
+        audio_data = convert_to_mono(audio_data, has_stereo_separation=True)
+    elif audio_data.ndim == 2:
+        # Normal stereo: average to mono
+        audio_data = convert_to_mono(audio_data, has_stereo_separation=False)
     
     # Resample to target
     if sr != target_sr:

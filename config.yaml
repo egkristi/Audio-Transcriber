@@ -20,7 +20,8 @@ preprocessing:
 # Speaker Diarization Settings
 diarization:
   model: "pyannote/speaker-diarization-3.1"
-  segmentation_model: "pyannote/segmentation-3.0"
+  # NOTE: pyannote/speaker-diarization-3.1 bundles its own segmentation model.
+  # The segmentation model is NOT configurable via this config file.
   min_speakers: null  # Auto-detect if null
   max_speakers: null  # Auto-detect if null
   num_speakers_override: null  # Set to specific number for 2-party conversations (e.g., 2)

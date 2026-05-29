@@ -95,6 +95,11 @@ class Diarizer:
             )
             logger.info(f"Loading diarization model: {model_name}")
             
+            # NOTE: pyannote/speaker-diarization-3.1 bundles its own
+            # segmentation model. The segmentation_model config field is
+            # intentionally NOT passed here — pyannote 3.1 manages its own
+            # segmentation internally. See ISSUES.md #4.
+            
             self.model = Pipeline.from_pretrained(
                 model_name,
                 use_auth_token=True  # Requires Hugging Face login

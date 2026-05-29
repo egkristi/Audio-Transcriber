@@ -85,14 +85,36 @@ class TranscriptionComparer:
     
     def calculate_similarity(self, text1: str, text2: str) -> float:
         """
-        Calculate text similarity using SequenceMatcher.
+        Calculate text similarity using word-level WER via jiwer.
         
-        Returns score between 0 and 1.
+        Falls back to SequenceMatcher if jiwer is unavailable.
+        
+        Returns score between 0 and 1, where 1 = identical, 0 = completely different.
         """
         if not text1 or not text2:
             return 1.0 if text1 == text2 else 0.0
         
-        # Normalize: lowercase and remove punctuation
+        # Try jiwer for word-level WER-based similarity
+        try:
+            import jiwer
+            
+            # Normalize: lowercase and strip punctuation for fair comparison
+            text1_norm = text1.lower().strip()
+            text2_norm = text2.lower().strip()
+            
+            # Compute WER (0 = identical, 1 = completely different)
+            wer = jiwer.wer(text1_norm, text2_norm)
+            
+            # Clamp and convert to similarity score
+            wer = max(0.0, min(1.0, wer))
+            similarity = 1.0 - wer
+            
+            return similarity
+        except Exception:
+            # Fallback to SequenceMatcher if jiwer fails
+            pass
+        
+        # Fallback: SequenceMatcher on normalized text
         text1_norm = text1.lower().replace(".", "").replace(",", "")
         text2_norm = text2.lower().replace(".", "").replace(",", "")
         

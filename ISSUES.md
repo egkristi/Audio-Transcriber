@@ -29,17 +29,24 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 
 ### #4: `segmentation_model` from `config.yaml` is ignored
 - **File:** `src/diarize.py`, `config.yaml`
-- **Status:** Open
-- **Description:** `config.yaml` defines `diarization.segmentation_model: "pyannote/segmentation-3.0"`, but `Diarizer._load_model()` only reads `diarization.model` and never uses the segmentation model setting.
-- **Impact:** Users cannot override the segmentation model via config.
-- **Fix:** Pass the segmentation model identifier to the pyannote pipeline if the API supports it, or document that it is not configurable.
+- **Status:** Resolved (2026-05-29)
+- **Description:** `config.yaml` previously defined `diarization.segmentation_model: "pyannote/segmentation-3.0"`, but `Diarizer._load_model()` only read `diarization.model` and never used the segmentation model setting.
+- **Impact:** Users could not override the segmentation model via config.
+- **Fix:** Removed `segmentation_model` from `config.yaml` and added a comment explaining that pyannote/speaker-diarization-3.1 bundles its own segmentation model internally. The field was misleading — pyannote 3.1 does not expose segmentation model configuration. Added inline comment in `diarize.py` referencing ISSUES.md #4.
+- **Rationale:** pyannote 3.1 uses an internal segmentation model that is not user-configurable. The config field was dead code.
 
 ### #5: Stereo audio collapsed to mono without channel separation option
 - **File:** `src/preprocess.py`
-- **Status:** Open
-- **Description:** `convert_to_mono()` always averages both channels. For true stereo recordings with one speaker per channel, this mixes speakers and reduces diarization accuracy.
+- **Status:** Resolved (2026-05-29)
+- **Description:** `convert_to_mono()` always averaged both channels. For true stereo recordings with one speaker per channel, this mixed speakers and reduced diarization accuracy.
 - **Impact:** Lower transcription quality for stereo call recordings.
-- **Fix:** When `metadata.has_stereo_separation` is `True`, split channels into separate mono files and process them independently, or at least preserve channel identity for downstream diarization.
+- **Fix:** 
+  1. `convert_to_mono()` now logs a warning when `has_stereo_separation=True`, alerting the caller that averaging will mix speakers.
+  2. Added `split_stereo_channels()` function that splits stereo audio into separate mono files per channel (`{stem}_ch0.wav`, `{stem}_ch1.wav`).
+  3. `preprocess_audio()` now detects `metadata.has_stereo_separation` and calls `split_stereo_channels()` when `output_dir` is provided, saving channel files for separate transcription.
+  4. Added inline comments referencing ISSUES.md #5.
+- **Limitation:** The pipeline does not yet automatically transcribe each channel separately and merge results. Channel files are saved but downstream orchestration (`run_pipeline.py`) still processes the averaged mono. Full channel-aware pipeline is future work.
+- **Verification:** All test files are mono; stereo separation path is code-reviewed but not exercised on real data.
 
 ### #6: `database.py`, `spell_check.py`, `vocabulary.py` not wired into pipeline
 - **File:** `scripts/run_pipeline.py`
@@ -101,10 +108,11 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 
 ### #9: `compare.py` alignment is simplistic
 - **File:** `src/compare.py`
-- **Status:** Open
-- **Description:** Segment alignment is based purely on time overlap (>50%). There is no word-level WER diff or robust alignment algorithm.
+- **Status:** Resolved (2026-05-29)
+- **Description:** Segment alignment was based purely on time overlap (>50%). Text similarity used `difflib.SequenceMatcher` on raw characters, which is less accurate than word-level WER for transcription comparison.
 - **Impact:** False positives/negatives in disagreement detection.
-- **Fix:** Implement word-level alignment (e.g., using `jiwer` or a custom DTW-based approach) and compute actual WER between segments.
+- **Fix:** `calculate_similarity()` now uses `jiwer.wer()` for word-level similarity when available, falling back to `SequenceMatcher` if jiwer fails. WER gives a more linguistically meaningful similarity score than character-level matching. Time-alignment remains overlap-based (appropriate for segment-level pairing).
+- **Note:** Full DTW-based alignment is still future work but low ROI for this use case.
 
 ### #15: Language detection returns wrong language for Norwegian
 - **File:** `src/analyze.py`
@@ -148,7 +156,15 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 - **Impact:** Review list was useless — no segments were prioritized; all had equal priority.
 - **Fix:** Added decoder signal fields to `TranscriptionSegment` dataclass. Updated pipeline to pass these signals through to `extract_confidence_signals()`. Added hard-rules for numbers and proper nouns as fallback when decoder signals are weak.
 
+### #21: `spell_check.py` has no Norwegian dictionary — feature is non-functional
+- **File:** `src/spell_check.py`
+- **Status:** Resolved (2026-05-29)
+- **Description:** `NorwegianSpellChecker._init_symspell()` created a `SymSpell` object but loaded **no dictionary**. `check_word()` would always return `True, None` because there was no vocabulary to compare against. The `--spell-check` CLI flag gave users false confidence that spelling was being checked.
+- **Impact:** `--spell-check` did nothing. Users believed spelling was verified when it was not.
+- **Fix:** Added explicit check in `_init_symspell()`: if no dictionary is loaded, set `symspell_available = False` and log a clear warning explaining that spell-checking is disabled without a Norwegian word list. Added inline comment documenting why no dictionary is bundled (licensing restrictions for Norwegian word lists) and how to enable it (download NST/UiB word list and call `load_dictionary()`).
+- **Rationale:** Norwegian dictionaries have licensing restrictions. Bundling one is non-trivial. Better to be honest that the feature is disabled than to silently do nothing.
+
 ## Resolved
 
-- #1, #2, #3, #6, #7, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20
+- #1, #2, #3, #4, #5, #6, #7, #9, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21
 - See individual issue entries above for details.

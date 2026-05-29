@@ -44,10 +44,34 @@ class NorwegianSpellChecker:
             # Download or use bundled dictionary
             self.symspell = SymSpell(max_dictionary_edit_distance=self.max_edits)
             
-            # Try to load Norwegian dictionary
-            # For now, we'll use a simple approach with custom dictionary
-            self.symspell_available = True
-            logger.info("SymSpell initialized")
+            # CRITICAL: SymSpell requires a loaded dictionary to function.
+            # We do NOT bundle a Norwegian dictionary because:
+            # 1. Norwegian dictionaries (NST/UiB) have licensing restrictions
+            # 2. symspellpy's bundled dictionaries are English-only
+            # 3. A custom dictionary would need manual curation
+            #
+            # Without a dictionary, check_word() will treat ALL words as unknown
+            # and return false positives. Therefore: spell-checking is effectively
+            # DISABLED until a dictionary is provided.
+            #
+            # To enable: download a Norwegian word list and call:
+            #   self.symspell.load_dictionary("no_wordlist.txt", term_index=0, count_index=1)
+            #
+            # See ISSUES.md for details.
+            
+            dictionary_loaded = False  # No dictionary bundled
+            
+            if not dictionary_loaded:
+                logger.warning(
+                    "No Norwegian dictionary loaded. Spell-checking is DISABLED. "
+                    "All words will be treated as unknown without a dictionary. "
+                    "Provide a word list or disable --spell-check."
+                )
+                self.symspell_available = False
+                self.symspell = None
+            else:
+                self.symspell_available = True
+                logger.info("SymSpell initialized with dictionary")
             
         except ImportError:
             logger.warning("symspellpy not installed, spell-checking disabled")
