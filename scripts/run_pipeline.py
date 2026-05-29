@@ -25,7 +25,7 @@ from typing import Optional, List, Dict
 # Add parent directory to path to import src modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.utils import setup_logging, get_logger, ensure_dir, format_duration
+from src.utils import setup_logging, get_logger, ensure_dir, format_duration, _NumpyEncoder
 from src.config import load_config
 from src.analyze import analyze_audio, save_metadata, AudioMetadata
 from src.preprocess import preprocess_audio
@@ -532,7 +532,7 @@ Examples:
         summary_file = args.output_dir / "pipeline_summary.json"
         args.output_dir.mkdir(parents=True, exist_ok=True)
         with open(summary_file, "w") as f:
-            json.dump(results, f, indent=2, default=str)
+            json.dump(results, f, indent=2, default=str, cls=_NumpyEncoder)
         logger.info(f"Summary saved to: {summary_file}")
         
         sys.exit(0 if failed == 0 else 1)

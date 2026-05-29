@@ -60,9 +60,50 @@ def get_ffprobe_info(file_path: Path) -> dict:
             text=True,
             timeout=30,
         )
+        if result.returncode != 0:
+            stderr = result.stderr.strip() if result.stderr else "unknown error"
+            raise RuntimeError(f"ffprobe exited with code {result.returncode}: {stderr}")
+        if not result.stdout.strip():
+            raise RuntimeError("ffprobe returned empty output")
         return json.loads(result.stdout)
     except Exception as e:
         logger.error(f"ffprobe failed for {file_path}: {e}")
+        raise
+
+
+def _get_audio_info_fallback(file_path: Path) -> dict:
+    """
+    Fallback audio metadata extraction when ffprobe is unavailable.
+
+    Uses librosa to extract duration, sample rate, and channel count.
+    Returns a dict compatible with the ffprobe output structure.
+    """
+    logger.warning(f"Using librosa fallback for metadata: {file_path.name}")
+    try:
+        audio_data, sr = librosa.load(str(file_path), sr=None, mono=False)
+        channels = 1 if audio_data.ndim == 1 else audio_data.shape[0]
+        duration = float(len(audio_data) / sr) if audio_data.ndim == 1 else float(audio_data.shape[1] / sr)
+        file_size = file_path.stat().st_size
+        # Estimate bitrate from file size and duration
+        bit_rate = int((file_size * 8) / max(duration, 0.001)) if duration > 0 else 0
+
+        return {
+            "format": {
+                "duration": str(duration),
+                "bit_rate": str(bit_rate),
+                "size": str(file_size),
+            },
+            "streams": [
+                {
+                    "codec_type": "audio",
+                    "codec_name": "unknown",
+                    "sample_rate": str(sr),
+                    "channels": str(channels),
+                }
+            ],
+        }
+    except Exception as e:
+        logger.error(f"librosa fallback also failed for {file_path}: {e}")
         raise
 
 
@@ -97,6 +138,10 @@ def detect_stereo_separation(
 
     # Compute cross-correlation
     correlation = np.corrcoef(audio_data[0], audio_data[1])[0, 1]
+
+    # Handle NaN when channels are identical (zero stddev)
+    if np.isnan(correlation):
+        return False
 
     return correlation < threshold
 
@@ -174,7 +219,7 @@ def detect_speech_vad(audio_data: np.ndarray, sample_rate: int) -> bool:
 
         # Run VAD
         wav = torch.from_numpy(audio_data).float()
-        speech_dict = get_speech_ts(wav, model, num_steps=500, sample_rate=sample_rate)
+        speech_dict = get_speech_ts(wav, model, sampling_rate=sample_rate)
 
         has_speech = len(speech_dict) > 0
         logger.info(f"VAD detected speech: {has_speech}")
@@ -235,8 +280,12 @@ def analyze_audio(file_path: Path, config: Optional[dict] = None) -> AudioMetada
 
     logger.info(f"Analyzing audio file: {file_path}")
 
-    # Get ffprobe info
-    ffprobe_data = get_ffprobe_info(file_path)
+    # Get ffprobe info (with librosa fallback)
+    try:
+        ffprobe_data = get_ffprobe_info(file_path)
+    except FileNotFoundError:
+        logger.warning("ffprobe not found, falling back to librosa for metadata")
+        ffprobe_data = _get_audio_info_fallback(file_path)
     fmt = ffprobe_data.get("format", {})
     streams = ffprobe_data.get("streams", [])
 

@@ -78,12 +78,31 @@ class Transcriber:
             
             logger.info(f"Using device: {device} (compute_type={compute_type})")
             
-            self.model = whisperx.load_model(
-                self.model_name,
-                device=device,
-                compute_type=compute_type,
-                language="no"  # Norwegian
-            )
+            # Build asr_options from config for faster-whisper decoding parameters
+            asr_options = {}
+            if "beam_size" in self.config:
+                asr_options["beam_size"] = self.config["beam_size"]
+            if "condition_on_previous_text" in self.config:
+                asr_options["condition_on_previous_text"] = self.config["condition_on_previous_text"]
+            if "initial_prompt" in self.config:
+                asr_options["initial_prompt"] = self.config["initial_prompt"]
+            if "best_of" in self.config:
+                asr_options["best_of"] = self.config["best_of"]
+            if "patience" in self.config:
+                asr_options["patience"] = self.config["patience"]
+            if "length_penalty" in self.config:
+                asr_options["length_penalty"] = self.config["length_penalty"]
+            
+            load_kwargs = {
+                "device": device,
+                "compute_type": compute_type,
+                "language": "no",  # Norwegian
+            }
+            if asr_options:
+                load_kwargs["asr_options"] = asr_options
+                logger.debug(f"Using asr_options: {list(asr_options.keys())}")
+            
+            self.model = whisperx.load_model(self.model_name, **load_kwargs)
             
             logger.info(f"Model loaded on device: {device}")
             
@@ -95,11 +114,7 @@ class Transcriber:
         self,
         audio_path: Path,
         language: str = "no",
-        beam_size: int = 5,
         word_timestamps: bool = True,
-        vad_filter: bool = True,
-        condition_on_previous_text: bool = True,
-        initial_prompt: Optional[str] = None
     ) -> List[TranscriptionSegment]:
         """
         Transcribe audio file.
@@ -107,11 +122,7 @@ class Transcriber:
         Args:
             audio_path: Path to audio file (should be preprocessed)
             language: Language code
-            beam_size: Beam search width
             word_timestamps: Include word-level timestamps
-            vad_filter: Filter silence before transcription
-            condition_on_previous_text: Use context from previous segments
-            initial_prompt: Optional prompt for vocabulary injection
             
         Returns:
             List of TranscriptionSegment objects
@@ -126,22 +137,12 @@ class Transcriber:
             # Load audio
             audio = whisperx.load_audio(str(audio_path))
             
-            # Build transcription kwargs from config parameters
+            # Build transcription kwargs — only pass args accepted by FasterWhisperPipeline.transcribe()
             transcribe_kwargs = {
                 "language": language,
                 "batch_size": 16,
                 "verbose": False,
-                "beam_size": beam_size,
-                "condition_on_previous_text": condition_on_previous_text,
             }
-            
-            if initial_prompt:
-                transcribe_kwargs["initial_prompt"] = initial_prompt
-                logger.debug(f"Using initial_prompt ({len(initial_prompt)} chars)")
-            
-            if vad_filter:
-                transcribe_kwargs["vad_filter"] = True
-                logger.debug("VAD filtering enabled")
             
             # Transcribe
             result = self.model.transcribe(audio, **transcribe_kwargs)
@@ -248,9 +249,7 @@ def transcribe_audio(
     transcriber = Transcriber(model_name, config)
     
     # Get transcription config
-    beam_size = config.get("beam_size", 5)
     word_timestamps = config.get("word_timestamps", True)
-    vad_filter = config.get("vad_filter", True)
     language = config.get("language", "no")
     
     logger.info(f"Starting transcription: {file_path.name}")
@@ -259,9 +258,7 @@ def transcribe_audio(
     segments = transcriber.transcribe(
         file_path,
         language=language,
-        beam_size=beam_size,
         word_timestamps=word_timestamps,
-        vad_filter=vad_filter
     )
     
     # Align with diarization if available

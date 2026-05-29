@@ -7,6 +7,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import numpy as np
+
 
 class JsonFormatter(logging.Formatter):
     """JSON logging formatter for structured logs."""
@@ -111,11 +113,26 @@ def ensure_dir(path: Path) -> Path:
     return path
 
 
+class _NumpyEncoder(json.JSONEncoder):
+    """JSON encoder that handles numpy types."""
+
+    def default(self, obj):
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        if isinstance(obj, (np.floating, np.float32, np.float64)):
+            return float(obj)
+        if isinstance(obj, (np.integer, np.int32, np.int64)):
+            return int(obj)
+        if isinstance(obj, np.bool_):
+            return bool(obj)
+        return super().default(obj)
+
+
 def save_json(data: Any, path: Path, indent: Optional[int] = 2) -> None:
     """Save data as JSON to file."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
-        json.dump(data, f, indent=indent, ensure_ascii=False)
+        json.dump(data, f, indent=indent, ensure_ascii=False, cls=_NumpyEncoder)
 
 
 def load_json(path: Path) -> Any:
