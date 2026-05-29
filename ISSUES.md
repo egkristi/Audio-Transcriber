@@ -197,10 +197,13 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 
 ### #25: `pydub` uses deprecated `audioop` — Python 3.13 time bomb
 - **File:** `pyproject.toml`, `src/preprocess.py`
-- **Status:** Open
-- **Description:** `pydub` imports `audioop` which is "deprecated and slated for removal in Python 3.13". `requires-python = ">=3.11,<3.13"` protects now, but is a time bomb.
-- **Impact:** Project is locked to Python 3.11–3.12. Cannot upgrade to 3.13.
-- **Fix:** Monitor pydub updates; consider migrating I/O to `soundfile`+`librosa`.
+- **Status:** Resolved (2026-05-29)
+- **Description:** `pydub` imported `audioop` which is "deprecated and slated for removal in Python 3.13". `requires-python = ">=3.11,<3.13"` protected against this, but locked the project to Python 3.11–3.12.
+- **Impact:** Project was locked to Python 3.11–3.12. Could not upgrade to 3.13.
+- **Fix:** 
+  1. Removed `pydub` dependency from `pyproject.toml` and `src/preprocess.py` — it was unused (no code called `load_audio_pydub()` or `AudioSegment`).
+  2. Removed the `<3.13` upper bound from `requires-python` in `pyproject.toml`.
+  3. All audio I/O already uses `librosa` + `soundfile`, which are Python 3.13-compatible.
 - **Reference:** AUDIT.md M2
 
 ### #26: `check_hf_auth()` does not verify token validity — only checks existence

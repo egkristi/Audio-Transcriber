@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 import numpy as np
-from pydub import AudioSegment, effects
 import librosa
 import soundfile as sf
 
@@ -17,17 +16,6 @@ from .utils import get_logger
 from .analyze import AudioMetadata
 
 logger = get_logger("preprocess")
-
-
-def load_audio_pydub(file_path: Path) -> AudioSegment:
-    """Load audio file using pydub."""
-    try:
-        audio = AudioSegment.from_file(str(file_path))
-        logger.debug(f"Loaded audio: {len(audio)}ms, {audio.frame_rate}Hz, {audio.channels}ch")
-        return audio
-    except Exception as e:
-        logger.error(f"Failed to load audio: {e}")
-        raise
 
 
 def resample_to_target_rate(

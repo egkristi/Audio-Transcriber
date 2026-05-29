@@ -96,6 +96,7 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 - ✅ Issue #22 — audio data caching mellom analyze og preprocess (unngår dobbel lasting)
 - ✅ Issue #23 — nøyaktig token-telling i vocabulary.py med Whisper tokenizer
 - ✅ Issue #24 — eksplisitte avhengigheter i pyproject.toml (symspellpy, soundfile)
+- ✅ Issue #25 — fjernet `pydub` avhengighet (ubrukt; låste Python til <3.13)
 - ✅ Issue #26 — HF token validering med whoami()
 
 ### Remaining (as of 2026-05-29)

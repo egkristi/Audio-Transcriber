@@ -24,10 +24,10 @@ The non-negotiable goal: a fasit (ground-truth transcript) plus a baseline WER n
 
 ## 3. Tech Stack
 
-- **Python:** 3.11, locked to `<3.13` due to `audioop` deprecation in `pydub` (tracked tech debt — AUDIT M2)
+- **Python:** 3.11+ (previously locked to `<3.13` due to `audioop` in `pydub`; resolved by removing unused `pydub` dependency)
 - **Package manager:** `uv` (never `pip` directly — bypasses lockfile)
 - **OS:** macOS primary; Linux/Windows for CUDA paths
-- **Core dependencies:** `whisperx`, `pyannote.audio`, `torch`, `librosa`, `soundfile`, `pydub`, `jiwer`, `pyloudnorm`, `pyyaml`, `numpy`, `symspellpy`
+- **Core dependencies:** `whisperx`, `pyannote.audio`, `torch`, `librosa`, `soundfile`, `jiwer`, `pyloudnorm`, `pyyaml`, `numpy`, `symspellpy`
 - **External tools:** `ffmpeg` and `ffprobe` (install via `brew install ffmpeg`)
 
 ---
@@ -65,7 +65,6 @@ These are constraints of the environment and will not change soon:
 
 ### Open issues tracked in `ISSUES.md`
 - **#8** `editor.py` is a placeholder — correctly parked (Subtitle Edit covers the need)
-- **#25** `pydub` uses deprecated `audioop` — Python 3.13 time bomb
 
 ### Resolved issues (still worth knowing about)
 - **#4** `segmentation_model` removed from `config.yaml` — pyannote 3.1 bundles its own
@@ -74,6 +73,7 @@ These are constraints of the environment and will not change soon:
 - **#21** `spell_check.py` explicitly disabled when no dictionary loaded — honest failure instead of silent no-op
 - **#22** `preprocess.py` no longer loads audio twice — `AudioMetadata.audio_data` caches the loaded array (ephemeral, excluded from JSON)
 - **#23** `vocabulary.py` now uses `transformers.AutoTokenizer` for accurate token counting; default `max_tokens=150` stays well under Whisper's 224-token limit
+- **#25** `pydub` dependency removed — unused; `audioop` deprecation no longer blocks Python 3.13
 
 ### Critique of AUDIT.md fixes worth knowing
 - **K1 fix (skip files < 1 KB) is a weak heuristic.** `moov atom not found` can occur on larger corrupted files too. A more robust fix is per-file ffprobe error handling that skips on failure rather than relying on size. Track as a follow-up.
