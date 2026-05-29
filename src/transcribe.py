@@ -42,6 +42,61 @@ class TranscriptionSegment:
     no_speech_prob: Optional[float] = None
     compression_ratio: Optional[float] = None
     temperature: Optional[float] = None
+    confidence_level: float = 1.0  # Computed 0-1 aggregate confidence score
+    
+    def compute_confidence_level(self) -> float:
+        """
+        Compute an aggregate confidence level (0-1) from all available signals.
+        
+        Combines decoder signals into a single interpretable score:
+        - avg_logprob: primary signal (typical range [-1, 0])
+        - no_speech_prob: hallucination risk (higher = worse)
+        - compression_ratio: repetition/looping (higher = worse)
+        - temperature: fallback difficulty (higher = worse)
+        - confidence: WhisperX-provided score if available
+        
+        Returns:
+            float between 0.0 (very uncertain) and 1.0 (highly confident)
+        """
+        scores = []
+        
+        # 1. Base confidence from avg_logprob (primary signal)
+        if self.avg_logprob is not None:
+            # Map [-1.0, 0.0] to [0.0, 1.0]
+            base = max(0.0, min(1.0, 1.0 + self.avg_logprob))
+            scores.append(base)
+        
+        # 2. WhisperX confidence if available
+        if self.confidence is not None and self.confidence < 1.0:
+            scores.append(self.confidence)
+        
+        # 3. Penalize high no_speech_prob (hallucination risk)
+        if self.no_speech_prob is not None:
+            penalty = max(0.0, 1.0 - self.no_speech_prob)
+            scores.append(penalty)
+        
+        # 4. Penalize high compression_ratio (repetition)
+        if self.compression_ratio is not None:
+            if self.compression_ratio > 3.0:
+                scores.append(0.3)
+            elif self.compression_ratio > 2.0:
+                scores.append(0.6)
+            else:
+                scores.append(1.0)
+        
+        # 5. Penalize temperature fallback
+        if self.temperature is not None and self.temperature > 0:
+            scores.append(max(0.0, 1.0 - self.temperature * 0.3))
+        
+        if not scores:
+            return 1.0
+        
+        # Use geometric mean for conservative scoring
+        import math
+        product = 1.0
+        for s in scores:
+            product *= s
+        return product ** (1.0 / len(scores))
 
 
 class Transcriber:
@@ -301,18 +356,26 @@ def transcribe_audio(
 
 
 def _segments_to_srt(segments: List[TranscriptionSegment]) -> str:
-    """Convert segments to SRT format."""
+    """Convert segments to SRT format with confidence levels."""
     lines = []
     
     for i, seg in enumerate(segments, 1):
         lines.append(str(i))
         lines.append(f"{_format_timestamp_srt(seg.start)} --> {_format_timestamp_srt(seg.end)}")
         
+        # Build subtitle text with speaker and confidence
+        confidence_pct = int(seg.confidence_level * 100)
+        confidence_label = ""
+        if confidence_pct < 50:
+            confidence_label = " [LOW CONFIDENCE]"
+        elif confidence_pct < 70:
+            confidence_label = " [MEDIUM CONFIDENCE]"
+        
         # Include speaker label inline with text (valid SRT)
         if seg.speaker:
-            lines.append(f"{seg.speaker}: {seg.text}")
+            lines.append(f"{seg.speaker}: {seg.text}{confidence_label}")
         else:
-            lines.append(seg.text)
+            lines.append(f"{seg.text}{confidence_label}")
         lines.append("")
     
     return "\n".join(lines)

@@ -40,6 +40,11 @@ class AudioMetadata:
     loudness_lufs: float  # Loudness in LUFS
     peak_db: float  # Peak level in dB
     dynamic_range_db: float  # Difference between peak and RMS
+    
+    # Transcription quality (populated after transcription step)
+    total_confidence: float = 1.0  # Aggregate confidence across all segments (0-1)
+    segments_count: int = 0  # Number of transcription segments
+    flagged_segments_count: int = 0  # Segments with confidence < 0.7 or flags
 
 
 def get_ffprobe_info(file_path: Path) -> dict:

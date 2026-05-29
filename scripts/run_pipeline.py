@@ -232,6 +232,23 @@ class AudioTranscriberPipeline:
                     "output_file": primary_output
                 }
                 
+                # Compute confidence levels for each segment
+                for seg in primary_segments:
+                    seg.confidence_level = seg.compute_confidence_level()
+                
+                # Compute aggregate confidence for the file
+                if primary_segments:
+                    segment_confidences = [s.confidence_level for s in primary_segments]
+                    metadata.total_confidence = float(np.mean(segment_confidences))
+                    metadata.segments_count = len(primary_segments)
+                    metadata.flagged_segments_count = sum(
+                        1 for s in primary_segments if s.confidence_level < 0.7
+                    )
+                    logger.info(
+                        f"Transcription confidence: {metadata.total_confidence:.3f} "
+                        f"({metadata.flagged_segments_count}/{metadata.segments_count} segments flagged)"
+                    )
+                
                 # Step: Norwegian text normalization
                 logger.info("\nSTEP: Norwegian Text Normalization")
                 try:

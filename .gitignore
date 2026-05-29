@@ -72,3 +72,4 @@ htmlcov/
 uv.lock
 testdata/output_test/
 output/
+testdata/

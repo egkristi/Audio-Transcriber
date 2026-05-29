@@ -35,6 +35,8 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 - [ ] VAD configuration and actual model selection should be hardened
 
 ### Phase 5: Feature gap closing
+- [x] **Per-segment confidence level** (`src/transcribe.py`) — `TranscriptionSegment.confidence_level` computed from `avg_logprob`, `no_speech_prob`, `compression_ratio`, `temperature` using geometric mean for conservative scoring. Exported in SRT as `[LOW CONFIDENCE]` / `[MEDIUM CONFIDENCE]` labels.
+- [x] **Per-file total confidence** (`src/analyze.py`, `scripts/run_pipeline.py`) — `AudioMetadata.total_confidence` stores the mean confidence across all segments. `segments_count` and `flagged_segments_count` track how many segments fell below the 0.7 threshold. Saved in metadata JSON for every processed file.
 - [x] **Word-level confidence-based review filtering** — `src/confidence.py` implemented and wired into pipeline
   - WhisperX alignment score (acoustic confidence)
   - faster-whisper decoder signals: `avg_logprob`, `no_speech_prob`, `compression_ratio`, `temperature`, `word.probability`
