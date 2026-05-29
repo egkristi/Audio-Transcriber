@@ -5,15 +5,19 @@ Post-processes WhisperX transcription output to fix common errors
 specific to Norwegian language transcription.
 
 Common Whisper errors on Norwegian:
-1. Character substitution: "aa" → "å", "ae" → "æ", "oe" → "ø"
-2. Missing spaces after punctuation
-3. Excessive repetition (stuttering)
-4. English word substitution
-5. Case issues (all lowercase segments)
-6. Trailing/leading whitespace
+1. No punctuation — verbatim model outputs stream of lowercase words
+2. Stuttering — repeated words ("jeg jeg", "kan kan")
+3. Character substitution: "aa" → "å", "ae" → "æ", "oe" → "ø"
+4. Missing spaces after punctuation
+5. English word substitution
+6. Case issues (all lowercase segments)
+7. Trailing/leading whitespace
 
-This module is conservative: it flags issues for review rather than
-auto-correcting, to avoid introducing new errors.
+This module has two modes:
+- Conservative (default): flags issues for review, auto-fixes only
+  punctuation, capitalization, and stuttering
+- Aggressive (auto_correct=True): also applies character substitutions
+  and English word replacements
 """
 
 import re
@@ -115,28 +119,217 @@ ENGLISH_TO_NORWEGIAN = {
     'sorry': 'beklager',
 }
 
+# Norwegian filler words that typically end a sentence or clause
+# These are used for punctuation restoration
+SENTENCE_END_FILLERS = {'ja', 'nei', 'da', 'hæ'}
+CLAUSE_BREAK_WORDS = {'så', 'men', 'for', 'og', 'at'}
 
-def normalize_norwegian_text(text: str) -> Tuple[str, List[Dict]]:
+# Norwegian words that should always be capitalized (names, places)
+NORWEGIAN_PROPER_NOUNS = {
+    'konrad', 'håvard', 'vardin', 'inger-anna', 'ingerland', 'astrid-marie',
+    'bjørn', 'geir', 'jorunn', 'davidsen', 'salomon', 'simon', 'mikkel',
+    'bremdeberg', 'sandnessjøen', 'bergem', 'salgsjukeren', 'biltemaet',
+    'poldkaia', 'røde kors',
+}
+
+
+def _fix_stuttering(words: List[str]) -> Tuple[List[str], List[Dict]]:
+    """
+    Remove consecutive duplicate words (stuttering artifacts).
+    
+    Whisper often repeats words when uncertain: "jeg jeg vil" → "jeg vil"
+    
+    Args:
+        words: List of words from the segment
+        
+    Returns:
+        Tuple of (cleaned_words, corrections)
+    """
+    corrections = []
+    if not words:
+        return words, corrections
+    
+    cleaned = [words[0]]
+    for i in range(1, len(words)):
+        if words[i] == words[i - 1]:
+            corrections.append({
+                "original": f"{words[i]} {words[i]}",
+                "corrected": words[i],
+                "position": i,
+                "type": "stuttering",
+                "explanation": f"Fjernet gjentakelse: '{words[i]}'"
+            })
+        else:
+            cleaned.append(words[i])
+    
+    return cleaned, corrections
+
+
+def _restore_punctuation(words: List[str]) -> Tuple[List[str], List[Dict]]:
+    """
+    Restore basic punctuation to Norwegian conversational speech.
+    
+    Uses filler words and clause markers to insert periods and commas:
+    - "ja", "nei", "da" at end of clause → period after
+    - "så", "men", "for" at start of clause → comma before
+    - "hæ" → question mark
+    
+    Args:
+        words: List of words (post-stuttering-fix)
+        
+    Returns:
+        Tuple of (words_with_punctuation, corrections)
+    """
+    corrections = []
+    if not words:
+        return words, corrections
+    
+    result = []
+    for i, word in enumerate(words):
+        word_lower = word.lower()
+        
+        # Check if this word is a sentence-ending filler
+        if word_lower in SENTENCE_END_FILLERS and i < len(words) - 1:
+            # Only add period if next word starts a new clause
+            next_word = words[i + 1].lower()
+            if next_word in CLAUSE_BREAK_WORDS or next_word in SENTENCE_END_FILLERS:
+                result.append(word + '.')
+                corrections.append({
+                    "original": word,
+                    "corrected": word + '.',
+                    "position": i,
+                    "type": "punctuation_period",
+                    "explanation": f"La til punktum etter '{word}'"
+                })
+            else:
+                result.append(word)
+        # Check if this word is a clause break word (add comma before)
+        elif word_lower in CLAUSE_BREAK_WORDS and i > 0:
+            prev_word = result[-1] if result else ''
+            if not prev_word.endswith(('.', '!', '?')):
+                result.append(',')
+                corrections.append({
+                    "original": f"{prev_word} {word}",
+                    "corrected": f"{prev_word}, {word}",
+                    "position": i,
+                    "type": "punctuation_comma",
+                    "explanation": f"La til komma før '{word}'"
+                })
+            result.append(word)
+        # Check for question: "hæ" anywhere in segment
+        elif word_lower == 'hæ':
+            result.append(word + '?')
+            corrections.append({
+                "original": word,
+                "corrected": word + '?',
+                "position": i,
+                "type": "punctuation_question",
+                "explanation": f"La til spørsmålstegn etter '{word}'"
+            })
+        else:
+            result.append(word)
+    
+    # Add period or question mark at end if last word doesn't end with punctuation
+    if result and not result[-1].endswith(('.', '!', '?')):
+        # Check if any word in the segment is a question word
+        has_question = any(w.lower().rstrip('?') in {'hæ', 'hva', 'hvem', 'hvor', 'hvordan', 'hvorfor', 'når'} for w in result)
+        if has_question:
+            result[-1] = result[-1] + '?'
+            corrections.append({
+                "original": result[-1][:-1],
+                "corrected": result[-1],
+                "position": len(result) - 1,
+                "type": "punctuation_question_end",
+                "explanation": "La til spørsmålstegn på slutten av setningen"
+            })
+        else:
+            result[-1] = result[-1] + '.'
+            corrections.append({
+                "original": result[-1][:-1],
+                "corrected": result[-1],
+                "position": len(result) - 1,
+                "type": "punctuation_period_end",
+                "explanation": "La til punktum på slutten av setningen"
+            })
+    
+    return result, corrections
+
+
+def _capitalize_sentence(words: List[str]) -> List[str]:
+    """
+    Capitalize the first word of each sentence.
+    
+    After punctuation restoration, words following '.', '!', or '?'
+    should be capitalized.
+    """
+    if not words:
+        return words
+    
+    result = list(words)
+    
+    # Capitalize first word
+    if result[0]:
+        result[0] = result[0][0].upper() + result[0][1:]
+    
+    # Capitalize after sentence-ending punctuation
+    for i in range(1, len(result)):
+        prev = result[i - 1]
+        if prev.endswith(('.', '!', '?')) and result[i]:
+            result[i] = result[i][0].upper() + result[i][1:]
+    
+    return result
+
+
+def normalize_norwegian_text(
+    text: str,
+    auto_correct: bool = False,
+) -> Tuple[str, List[Dict]]:
     """
     Normalize Norwegian text and return corrections with explanations.
     
+    Applies in order:
+    1. Fix stuttering (consecutive duplicate words)
+    2. Restore punctuation (periods, commas, question marks)
+    3. Capitalize sentences
+    4. Fix missing spaces after punctuation
+    5. Flag character substitutions, English words, repetition
+    
     Args:
         text: Raw transcription text
+        auto_correct: If True, also apply character substitutions and
+                      English word replacements (aggressive mode)
         
     Returns:
         Tuple of (normalized_text, list_of_corrections)
         Each correction dict has: original, corrected, position, type, explanation
     """
     corrections = []
-    normalized = text
-    offset = 0
+    normalized = text.strip()
     
-    # 1. Fix missing spaces after punctuation
-    # Pattern: punctuation followed immediately by letter
+    # 0. Pre-clean: normalize whitespace
+    normalized = re.sub(r'\s+', ' ', normalized)
+    
+    # 1. Fix stuttering (consecutive duplicate words)
+    words = normalized.split()
+    words, stutter_corrections = _fix_stuttering(words)
+    corrections.extend(stutter_corrections)
+    
+    # 2. Restore punctuation
+    words, punct_corrections = _restore_punctuation(words)
+    corrections.extend(punct_corrections)
+    
+    # 3. Capitalize sentences
+    words = _capitalize_sentence(words)
+    
+    # Rejoin into text
+    normalized = ' '.join(words)
+    
+    # 4. Fix missing spaces after punctuation
+    # Pattern: punctuation followed immediately by letter (no space)
     punct_pattern = re.compile(r'([.,;:!?])([a-zA-ZæøåÆØÅ])')
-    for match in punct_pattern.finditer(text):
+    offset = 0
+    for match in punct_pattern.finditer(normalized):
         pos = match.start() + offset
-        # Insert space
         normalized = normalized[:pos+1] + ' ' + normalized[pos+1:]
         offset += 1
         corrections.append({
@@ -147,15 +340,10 @@ def normalize_norwegian_text(text: str) -> Tuple[str, List[Dict]]:
             "explanation": "Manglende mellomrom etter tegnsetting"
         })
     
-    # 2. Fix multiple spaces
+    # 5. Fix multiple spaces (again, in case step 4 introduced any)
     normalized = re.sub(r'  +', ' ', normalized)
     
-    # 3. Fix leading/trailing whitespace
-    normalized = normalized.strip()
-    
-    # 4. Flag character substitutions (aa→å, ae→æ, oe→ø)
-    # These are conservative: we flag them but don't auto-replace
-    # because context matters (e.g., "Aage" is a name, not "Åge")
+    # 6. Flag character substitutions (aa→å, ae→æ, oe→ø)
     for pattern, replacement in NORWEGIAN_CHAR_MAP.items():
         for match in re.finditer(pattern, normalized, re.IGNORECASE):
             corrections.append({
@@ -166,9 +354,9 @@ def normalize_norwegian_text(text: str) -> Tuple[str, List[Dict]]:
                 "explanation": f"Mulig '{match.group(0)}' skal være '{replacement}'"
             })
     
-    # 5. Flag English words
-    words = normalized.lower().split()
-    for i, word in enumerate(words):
+    # 7. Flag English words
+    word_list = normalized.lower().split()
+    for i, word in enumerate(word_list):
         if word in ENGLISH_TO_NORWEGIAN:
             corrections.append({
                 "original": word,
@@ -178,8 +366,7 @@ def normalize_norwegian_text(text: str) -> Tuple[str, List[Dict]]:
                 "explanation": f"Engelsk ord '{word}' — kanskje ment '{ENGLISH_TO_NORWEGIAN[word]}'?"
             })
     
-    # 6. Flag excessive repetition
-    word_list = normalized.lower().split()
+    # 8. Flag excessive repetition (across whole segment, not just consecutive)
     for word in set(word_list):
         count = word_list.count(word)
         if count >= 3:
@@ -191,14 +378,14 @@ def normalize_norwegian_text(text: str) -> Tuple[str, List[Dict]]:
                 "explanation": f"Ordet '{word}' gjentas {count} ganger — mulig hallusinasjon"
             })
     
-    # 7. Flag very short segments
-    if len(words) < 3:
+    # 9. Flag very short segments
+    if len(word_list) < 3:
         corrections.append({
             "original": normalized,
             "corrected": normalized,
             "position": 0,
             "type": "short_segment",
-            "explanation": f"Kun {len(words)} ord — sjekk at segmentet er komplett"
+            "explanation": f"Kun {len(word_list)} ord — sjekk at segmentet er komplett"
         })
     
     return normalized, corrections

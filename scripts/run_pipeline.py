@@ -93,7 +93,9 @@ class AudioTranscriberPipeline:
         secondary_model: str = "openai/whisper-large-v3",
         db: Optional[TranscriptionDatabase] = None,
         vocab_file: Optional[Path] = None,
-        spell_check: bool = False
+        spell_check: bool = False,
+        min_speakers: Optional[int] = None,
+        max_speakers: Optional[int] = None,
     ) -> Dict:
         """
         Process a single audio file through the pipeline.
@@ -109,6 +111,8 @@ class AudioTranscriberPipeline:
             db: Optional TranscriptionDatabase for job tracking
             vocab_file: Optional custom vocabulary JSON file
             spell_check: Enable Norwegian spell-checking on output
+            min_speakers: Minimum number of speakers for diarization
+            max_speakers: Maximum number of speakers for diarization
             
         Returns:
             Dict with pipeline results
@@ -186,6 +190,8 @@ class AudioTranscriberPipeline:
                     file_path,
                     metadata.duration_seconds,
                     {"diarization": diarization_config},
+                    min_speakers=min_speakers,
+                    max_speakers=max_speakers,
                     output_dir=file_output_dir
                 )
                 results["steps"]["diarize"] = {
@@ -552,6 +558,18 @@ Examples:
         help="Skip speaker diarization"
     )
     parser.add_argument(
+        "--min-speakers",
+        type=int,
+        default=None,
+        help="Minimum number of speakers for diarization"
+    )
+    parser.add_argument(
+        "--max-speakers",
+        type=int,
+        default=None,
+        help="Maximum number of speakers for diarization"
+    )
+    parser.add_argument(
         "--compare-models",
         action="store_true",
         default=False,
@@ -646,6 +664,8 @@ Examples:
             "db": db,
             "vocab_file": args.vocabulary_file,
             "spell_check": args.spell_check,
+            "min_speakers": args.min_speakers,
+            "max_speakers": args.max_speakers,
         }
         
         if args.input.is_file():

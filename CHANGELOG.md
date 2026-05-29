@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-05-29
+
+### Added
+- **Punctuation restoration** (`src/normalize.py`) — rule-based insertion of periods, commas, and question marks in Norwegian conversational speech. Uses filler words ("ja", "nei", "da") and clause markers ("så", "men", "for") to determine sentence boundaries. Question words ("hæ", "hva", "hvorfor", etc.) trigger `?` instead of `.` at segment end.
+- **Sentence capitalization** (`src/normalize.py`) — first word of each segment and words following `.`, `!`, or `?` are now capitalized.
+- **Stuttering removal** (`src/normalize.py`) — consecutive duplicate words (e.g., "jeg jeg vil" → "jeg vil") are automatically removed as a normalization step.
+- **`--min-speakers` / `--max-speakers` CLI flags** (`scripts/run_pipeline.py`) — new optional arguments to constrain speaker count during diarization. Passed through to `diarize_audio()` which already supported these parameters.
+
+### Changed
+- **`normalize_norwegian_text()`** (`src/normalize.py`) — completely rewritten with three new sub-functions (`_fix_stuttering`, `_restore_punctuation`, `_capitalize_sentence`) that run before the existing flagging logic. The module now auto-corrects punctuation, capitalization, and stuttering rather than just flagging them.
+- **`process_single_file()`** (`scripts/run_pipeline.py`) — added `min_speakers` and `max_speakers` parameters, forwarded to `diarize_audio()`.
+
 ## [0.1.7] - 2026-05-29
 
 ### Added
