@@ -317,7 +317,7 @@ Real pipeline execution on `testdata/Call recording Elida Anna Wiktoria Kristian
 
 > Se `ISSUES.md` for fullstendig og oppdatert status på alle problemer. Denne seksjonen er et sammendrag.
 
-### Resolved (2026-05-28 to 2026-05-29)
+### Resolved (2026-05-28 to 2026-05-30)
 - ✅ Issue #1 — konfig-parametre koblet til WhisperX
 - ✅ Issue #2 — språkdeteksjon via `faster_whisper` (cachet, 30s-klipp)
 - ✅ Issue #3 — HF-auth-helper
@@ -344,6 +344,14 @@ Real pipeline execution on `testdata/Call recording Elida Anna Wiktoria Kristian
 - ✅ Issue #27 — normalize.py Path import (runtime NameError)
 - ✅ Issue #28 — run_pipeline.py numpy import (runtime NameError)
 - ✅ Issue #29 — diarize.py token parameter (pyannote.audio API compatibility)
+- ✅ Issue #30 — word-level forced alignment fallback (NbAiLab/nb-wav2vec2-1b-bokmaal-v2)
+- ✅ Issue #31 — editor Step 6 SRT filename mismatch (reuse `primary_output` instead of reconstructing)
+- ✅ Issue #32 — compare.py config key mismatch (read from correct config blocks)
+- ✅ Issue #33 — model caching across files in batch (module-level `_model_cache`/`_align_model_cache`)
+- ✅ Issue #34 — pyproject.toml version drift (bumped to match CHANGELOG.md)
+- ✅ Issue #35 — normalization opt-in with `--normalize` flag (raw output preserved as `*_raw.srt`)
+- ✅ Issue #36 — privacy: real names removed from source (gitignored `data/proper_nouns.json`)
+- ✅ Issue #37 — `--diarize` flag cleanup (opt-in with `default=False`, removed `--no-diarize`)
 
 ### Remaining (as of 2026-05-30)
 - **#8:** `editor.py` er fortsatt placeholder — korrekt parkert, Subtitle Edit dekker behovet
