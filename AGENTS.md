@@ -1,6 +1,8 @@
 # AGENTS.md — Audio-Transcriber AI Agent Instructions
 
-> Read this file first. Then read `AUDIT.md`, `ISSUES.md`, and the latest `CHANGELOG.md` entry. **Verify the current state against the actual code before trusting any document — drift has been observed in this repo, including in audit reports.**
+> Read this file first. Then read `ISSUES.md` (Open section), `ROADMAP.md` (near-term), and the latest `CHANGELOG.md` entry. **Verify the current state against the actual code before trusting any document — drift has been observed in this repo, including in audit reports.**
+>
+> **This file is a model-agnostic contract.** It is written to be followed identically by any coding agent — DeepSeek, Kimi, Claude (Opus/Sonnet), GPT, Gemini, Qwen, local models — driven from **VS Code** (Continue, Cline, Roo Code, Copilot Chat, Cursor, or the integrated terminal). Whatever model you are, obey these rules and leave the canonical trackers (`ISSUES.md`, `ROADMAP.md`, `CHANGELOG.md`) updated so the *next* agent — likely a different model — can resume cleanly. The trackers are the shared memory between models. See **§18 (VS Code environment)** and **§19 (multi-model guidance)** for setup and per-model expectations.
 
 ---
 
@@ -261,3 +263,132 @@ At the start of every session, follow this sequence:
 6. **Commit and push** after each logical change. One change per commit. Never force-push.
 
 This workflow ensures the canonical trackers (`ISSUES.md`, `ROADMAP.md`, `CHANGELOG.md`) stay in sync with the code at all times.
+
+---
+
+## 18. VS Code Development Environment
+
+This project is developed in **VS Code** with an AI coding assistant (Continue, Cline, Roo Code, Copilot Chat, Cursor, etc.) and/or the integrated terminal. The setup below is the expected baseline regardless of which model backs the assistant.
+
+### One-time setup
+
+```bash
+brew install uv ffmpeg          # ffmpeg/ffprobe are required (analyze.py shells out to ffprobe)
+cd /Users/erling/code/Audio-Transcriber
+uv sync                          # creates .venv/ from uv.lock (Python 3.11 — see .python-version)
+uv run huggingface-cli login     # once, for pyannote diarization (HF-gated model)
+cp .env.example .env             # then fill in HF_TOKEN; .env is gitignored
+```
+
+The interpreter lives at `.venv/bin/python`. Point VS Code at it: **Cmd-Shift-P → Python: Select Interpreter → `./.venv/bin/python`**.
+
+### Recommended workspace files
+
+`.vscode/` is gitignored, so these are local-only and safe to create. Suggested `.vscode/settings.json`:
+
+```json
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+  "python.testing.pytestEnabled": true,
+  "python.testing.pytestArgs": ["tests"],
+  "python.analysis.typeCheckingMode": "basic",
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": { "source.organizeImports": "explicit" }
+  },
+  "files.watcherExclude": {
+    "**/testdata/**": true,
+    "**/output/**": true,
+    "**/.venv/**": true
+  },
+  "search.exclude": {
+    "**/testdata": true,
+    "**/output": true,
+    "**/uv.lock": true,
+    "**/.venv": true
+  }
+}
+```
+
+Suggested `.vscode/launch.json` for debugging the pipeline on one file:
+
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Pipeline: single file (no diarize)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/run_pipeline.py",
+      "args": ["--input", "testdata/<recording>.m4a", "--output-dir", "./output",
+               "--no-diarize", "--dialect", "northern_norwegian"],
+      "console": "integratedTerminal",
+      "python": "${workspaceFolder}/.venv/bin/python"
+    }
+  ]
+}
+```
+
+### Recommended extensions
+
+- **Python** + **Pylance** (Microsoft) — interpreter, IntelliSense, test discovery.
+- **Ruff** (`charliermarsh.ruff`) — lint + format (both are dev deps in `pyproject.toml`).
+- Your AI assistant of choice (Continue / Cline / Roo Code / Copilot Chat / Cursor). Configure it to read `AGENTS.md` as project context.
+
+### Everyday commands (run in the VS Code integrated terminal)
+
+```bash
+uv run pytest -q                                   # full unit suite (must be green before commit)
+uv run pytest tests/test_confidence.py -q          # one module
+uv run ruff check . && uv run ruff format --check . # lint + format gate
+uv run python scripts/run_pipeline.py --help        # CLI surface
+uv run python scripts/run_pipeline.py --input testdata/<file>.m4a --no-diarize   # quick run
+uv run python scripts/evaluate.py --reference testdata/fasit.txt --hypothesis output/<run>/<file>.srt
+```
+
+- **Always** invoke Python via `uv run …`, never a bare `python` / `pip` — that bypasses the lockfile (§3).
+- `ffprobe` must be on `PATH`; if `analyze.py` falls back to librosa with a warning, ffmpeg isn't installed.
+- Do **not** add `.vscode/` to git, and do **not** commit `.env`, `output/`, `testdata/`, or `*.db` (all gitignored — keep it that way; see ISSUES.md #36 on data handling).
+
+---
+
+## 19. Multi-Model Agent Guidance (DeepSeek, Kimi, Opus, GPT, …)
+
+Different models will work on this repo over time, each with different context windows, tool-calling reliability, and reasoning depth. These rules keep results consistent and let any model hand off to any other.
+
+### Model-agnostic rules (apply to every model)
+
+1. **The trackers are shared memory.** You may be a different model than the one that worked last, with none of its chat history. Reconstruct state only from `ISSUES.md` / `ROADMAP.md` / `CHANGELOG.md` / git log — and from the code itself. Before finishing, write your state back so the next model can resume (§16, §17).
+2. **Verify against code, never against prose** (§8.5). Model training data may predate the current `whisperx` / `pyannote.audio` / `faster-whisper` APIs — confirm signatures with `uv run python -c "import whisperx; help(...)"` or by reading the installed package, don't assume.
+3. **Minimal diffs.** Prefer the smallest change that fixes the issue. One logical change per commit (§13). Don't reformat unrelated code or "drive-by" refactor.
+4. **Determinism over cleverness.** Use the exact commands in §18. Don't invent paths, flags, or filenames — the SRT naming bug (ISSUES.md #31) is exactly the kind of error that comes from reconstructing strings instead of reusing returned values.
+5. **No fabricated numbers.** Never invent WER/CER or test results. If the fasit doesn't exist, say so and stop (§8.1).
+6. **Note the model in the commit body** (optional but encouraged), e.g. a trailer line `Agent: kimi-k2` — it makes drift and regressions traceable across models.
+
+### Context budgeting (especially for smaller-context models)
+
+Read order, cheapest-useful-first: **`AGENTS.md` → `ISSUES.md` (Open) → `ROADMAP.md` (near-term) → only the specific `src/*.py` you're editing → its test.** Then expand as needed.
+
+**Never load these into context** (they will blow a small window for zero benefit):
+- `uv.lock` (~750 KB), `.venv/`
+- `testdata/` and `output/` (real recordings/transcripts — also a privacy concern, ISSUES.md #36)
+- `*.db`, `*.wav`, `*.m4a`, `*_review_list.json`
+
+The whole `src/` tree is ~3 k LOC and each module is self-contained — read one module at a time rather than the whole tree.
+
+### Per-model expectations (capability, not hierarchy)
+
+- **Large-context / strong-reasoning models (e.g. Opus, large frontier models):** OK to take on multi-file changes (e.g. the language-pack refactor in ROADMAP Phase 11), cross-module audits, and the §12 audit checklist in one pass. Still: one logical change per commit.
+- **Strong coders with mid-size context (e.g. DeepSeek-Coder, Kimi, Qwen-Coder):** excellent for scoped, single-module fixes (ISSUES.md #31–#37) and test writing. Keep tasks to one module + its test per step; lean on the read-order above to stay within context.
+- **Smaller / local models:** restrict to one well-specified issue with an explicit fix already described in `ISSUES.md`. Always run `uv run pytest -q` after editing; if the suite can't be reasoned about, stop and hand back rather than guessing.
+
+If you are unsure whether a change is within your reliable capability, **split it smaller** and leave a `ROADMAP.md` note for the remainder rather than half-finishing a large refactor.
+
+### Tool-calling / agent-mode notes
+
+- Confirm the working directory is the repo root before running commands (paths in §18 are repo-relative).
+- After any file edit, re-run the relevant `pytest` target before moving on — don't batch edits across modules without a green checkpoint.
+- If your assistant supports it, add `AGENTS.md` (and `ISSUES.md`) to the always-included project context so these rules survive context truncation.
+- Long pipeline runs (CPU transcription is minutes per recording, §5) will exceed short tool timeouts — run them in the integrated terminal, not as a blocking agent tool call, and inspect the output dir afterward.
