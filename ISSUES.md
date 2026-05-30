@@ -312,35 +312,34 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 - **#8** — `editor.py` web editor (parked; Subtitle Edit covers the need)
 - **#44** — VAD chunk_size fix: chunk_size=10 reduces WER by 15.69pp vs v3, but still worse than baseline. Optimal chunk_size likely between 10 and 30.
 
-### #44 — VAD chunk_size fix: chunk_size=10 reduces WER by 15.69pp vs v3, but still worse than baseline
+### #44 — VAD chunk_size fix: chunk_size=10 best so far (70.25% WER), chunk_size=20 slightly worse (71.35%)
 - **File:** `src/transcribe.py`, `config.yaml`
 - **Status:** Open
 - **Priority:** Critical
 - **Description:** Implemented `vad_options` passthrough to `whisperx.load_model()` in `_load_model()`. Default `chunk_size` changed from 30s to 10s via `config.yaml`. Post-processing split (`_split_long_segments()`) disabled by default (was counterproductive, +22-26pp WER).
 - **Results (fasit1, 2810 reference words):**
 
-  | Metric | v1 (baseline) | v2 (split) | v3 (no split) | v4 (chunk=10) |
-  |--------|:------------:|:---------:|:------------:|:-------------:|
-  | WER | 63.67% | 89.47% | 85.94% | **70.25%** |
-  | Hyp words | 2415 | 3362 | 3159 | **1615** |
-  | Hits | 1020 | 1063 | 1057 | **942** |
-  | Substitutions | 1042 | 1532 | 1440 | **567** |
-  | Deletions | 748 | 215 | 313 | **1301** |
-  | Insertions | 347 | 767 | 662 | **106** |
-  | Segments | — | — | 109 | **55** |
-  | Stutter (adj repeats) | — | — | 62 | **36** |
+  | Metric | v1 (baseline) | v2 (split) | v3 (no split) | v4 (chunk=10) | v5 (chunk=20) |
+  |--------|:------------:|:---------:|:------------:|:-------------:|:-------------:|
+  | WER | 63.67% | 89.47% | 85.94% | **70.25%** | 71.35% |
+  | Hyp words | 2415 | 3362 | 3159 | **1615** | 1682 |
+  | Hits | 1020 | 1063 | 1057 | **942** | 939 |
+  | Substitutions | 1042 | 1532 | 1440 | **567** | 609 |
+  | Deletions | 748 | 215 | 313 | **1301** | 1262 |
+  | Insertions | 347 | 767 | 662 | **106** | 134 |
+  | Segments | — | — | 109 | **55** | — |
+  | Stutter (adj repeats) | — | — | 62 | **36** | — |
 
 - **Analysis:**
-  - **WER improved 15.69pp vs v3** (85.94% → 70.25%) — chunk_size=10 is clearly better than 30
-  - **But still worse than v1 baseline** (63.67%) — chunk_size=10 is too aggressive
-  - **Insertions nearly eliminated**: 662 → 106 (good — less hallucination)
-  - **Substitutions halved**: 1440 → 567 (good — more accurate when it transcribes)
-  - **Deletions exploded**: 313 → 1301 (bad — model misses large chunks of speech)
-  - **Hypothesis words halved**: 3159 → 1615 (model is too conservative)
-  - **Stuttering reduced**: 62 → 36 adjacent repeats
-  - **Segments halved**: 109 → 55 (fewer artificial splits)
-- **Conclusion:** chunk_size=10 overcorrects. The optimal value is between 10 and 30. The VAD merge threshold is too short, causing the model to lose context and skip speech. **Next step: test chunk_size=20** as a middle ground.
-- **Discovered during:** Test run analysis (2026-05-30). Evaluated 2026-05-30.
+  - **chunk_size=10 (v4) is the best so far** at 70.25% WER
+  - **chunk_size=20 (v5) is slightly worse** at 71.35% WER (+1.1pp)
+  - **chunk_size=20 vs 10 tradeoff:** slightly fewer deletions (1262 vs 1301) but more substitutions (609 vs 567) and insertions (134 vs 106)
+  - **All VAD chunk_size values tested (10, 20, 30) are worse than baseline (63.67%)** — VAD chunk_size alone is not the full solution
+  - **Insertions nearly eliminated** with any VAD chunk_size < 30: 662 (v3) → 106-134 (v4/v5)
+  - **Substitutions roughly halved** with any VAD chunk_size < 30: 1440 (v3) → 567-609 (v4/v5)
+  - **Deletions remain the dominant error mode** (~1300) regardless of chunk_size
+- **Conclusion:** chunk_size=10 is the best tested value. The overcorrection problem (deletions) is not solved by tuning chunk_size alone — it's a fundamental issue with VAD-based segmentation. The model loses context when segments are too short. **Next step: investigate alternative approaches** — either disable VAD entirely (revert to full-audio transcription) or explore different VAD merge parameters (vad_onset/vad_offset).
+- **Discovered during:** Test run analysis (2026-05-30). Evaluated 2026-05-30 (v4) and 2026-05-31 (v5).
 
 ### #39 — WER baseline 63.67% — model unusable for unattended transcription
 - **File:** `scripts/run_pipeline.py`, `src/transcribe.py`

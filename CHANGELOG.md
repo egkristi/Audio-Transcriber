@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.26] - 2026-05-31
+
+### Added
+- **Fasit1 v5 WER evaluation results** — chunk_size=20 tested as middle ground between 10 and 30.
+
+### Changed
+- **ISSUES.md #44 updated** — v5 results added. chunk_size=20 (71.35% WER) is slightly worse than chunk_size=10 (70.25%). All VAD chunk_size values tested (10, 20, 30) are worse than baseline (63.67%). Conclusion: VAD chunk_size tuning alone is not sufficient. Next: investigate alternative approaches (disable VAD entirely or tune vad_onset/vad_offset).
+- **ROADMAP.md** — v5 results added to test run findings. Phase 6 updated with v5 outcome. Next step updated to reflect new direction.
+
 ## [0.1.25] - 2026-05-30
 
 ### Added
