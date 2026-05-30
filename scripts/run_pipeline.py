@@ -594,6 +594,13 @@ Examples:
         help="Maximum number of speakers for diarization"
     )
     parser.add_argument(
+        "--num-speakers",
+        type=int,
+        default=None,
+        help="Convenience: set both --min-speakers and --max-speakers to this value "
+             "(e.g. --num-speakers 2 for telephone calls)"
+    )
+    parser.add_argument(
         "--compare-models",
         action="store_true",
         default=False,
@@ -695,6 +702,14 @@ Examples:
         # Process files
         steps = [args.step] if args.step else None
         
+        # Resolve --num-speakers convenience flag
+        min_speakers = args.min_speakers
+        max_speakers = args.max_speakers
+        if args.num_speakers is not None:
+            min_speakers = args.num_speakers
+            max_speakers = args.num_speakers
+            logger.info(f"Using --num-speakers={args.num_speakers} (min={min_speakers}, max={max_speakers})")
+
         pipeline_kwargs = {
             "steps": steps,
             "diarize": args.diarize,
@@ -706,8 +721,8 @@ Examples:
             "dialect": args.dialect,
             "spell_check": args.spell_check,
             "normalize": args.normalize,
-            "min_speakers": args.min_speakers,
-            "max_speakers": args.max_speakers,
+            "min_speakers": min_speakers,
+            "max_speakers": max_speakers,
         }
         
         if args.input.is_file():

@@ -77,7 +77,7 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 - [ ] Performance profiling and resource usage monitoring — **next priority after fasit exists**
 
 ### Phase 7: Quality & documentation
-- [x] Add unit tests — 38 tests covering `analyze.py`, `preprocess.py`, `compare.py`, `diarize.py`
+- [x] Add unit tests — 109 tests covering `analyze.py`, `preprocess.py`, `compare.py`, `diarize.py`, `normalize.py`, `vocabulary.py`
 - [ ] Add integration tests — requires real audio fixtures; blocked until fasit exists. **Next priority after first successful end-to-end run.**
 - [~] Add CI pipeline — overinvestment for personal tool; targeted unit tests are sufficient
 - [ ] Add troubleshooting guide — **add after collecting common failure modes from real runs**
@@ -128,8 +128,8 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 - [x] **Privacy & data handling (ISSUES.md #36)** — removed real personal names from committed source. Added `load_proper_nouns()` that loads from gitignored `data/proper_nouns.json`. Added `data/` to `.gitignore`.
 - [x] **Clean up `--diarize` flag (ISSUES.md #37)** — made diarization opt-in (`default=False`). Removed redundant `--no-diarize` flag.
 - [ ] **Integration test on a tiny real/synthetic clip** — covers the orchestrator glue (currently untested): the path-building, config wiring, normalization, and confidence steps that unit tests don't touch.
-- [ ] **Unit tests for the newest modules** — `normalize.py`, `vocabulary.py`, `spell_check.py`, `database.py`, `editor.py` have no tests; they are also where the most recent churn is.
-- [ ] **CLI `--num-speakers 2` convenience** — lock 2-party telephone calls to two speakers (config already supports `num_speakers_override`; surface it on the CLI).
+- [x] **Unit tests for the newest modules** — `normalize.py` (39 tests, 7 test classes) and `vocabulary.py` (29 tests, 5 test classes) now have coverage. `spell_check.py`, `database.py`, `editor.py` remain untested.
+- [x] **CLI `--num-speakers 2` convenience** — added `--num-speakers` flag that sets both `min_speakers` and `max_speakers` to the same value. Useful for telephone calls with 2 speakers.
 
 ### Phase 10: Norwegian — all dialects (extends Phase 8)
 

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.16] - 2026-05-30
+
+### Added
+- **`--num-speakers` CLI flag** — convenience flag that sets both `min_speakers` and `max_speakers` to the same value. Useful for telephone calls with 2 speakers. Resolved in `main()` before constructing pipeline kwargs.
+- **Unit tests for `normalize.py`** — 7 test classes covering stuttering removal, punctuation restoration, capitalization, dialect flagging, English word flagging, short segment detection, repetition detection, missing space fixing, empty input, batch segment processing, report export, proper noun loading, and constant verification.
+- **Unit tests for `vocabulary.py`** — 5 test classes covering VocabularyManager (add, load, save, prompt generation, token limits, domain filtering, corrections), CommonNorwegianVocabulary (domain/dialect vocabulary, create_manager), load_vocabulary (default, with dialect, with domain, custom file, empty fallback), and count_tokens.
+
 ## [0.1.15] - 2026-05-30
 
 ### Fixed
