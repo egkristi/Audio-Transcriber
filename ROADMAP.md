@@ -77,7 +77,7 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 - [ ] Performance profiling and resource usage monitoring — **next priority after fasit exists**
 
 ### Phase 7: Quality & documentation
-- [x] Add unit tests — 109 tests covering `analyze.py`, `preprocess.py`, `compare.py`, `diarize.py`, `normalize.py`, `vocabulary.py`
+- [x] Add unit tests — 134 tests covering `analyze.py`, `preprocess.py`, `compare.py`, `diarize.py`, `normalize.py`, `vocabulary.py`, `confidence.py`, `spell_check.py`
 - [ ] Add integration tests — requires real audio fixtures; blocked until fasit exists. **Next priority after first successful end-to-end run.**
 - [~] Add CI pipeline — overinvestment for personal tool; targeted unit tests are sufficient
 - [ ] Add troubleshooting guide — **add after collecting common failure modes from real runs**
@@ -128,8 +128,10 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 - [x] **Privacy & data handling (ISSUES.md #36)** — removed real personal names from committed source. Added `load_proper_nouns()` that loads from gitignored `data/proper_nouns.json`. Added `data/` to `.gitignore`.
 - [x] **Clean up `--diarize` flag (ISSUES.md #37)** — made diarization opt-in (`default=False`). Removed redundant `--no-diarize` flag.
 - [ ] **Integration test on a tiny real/synthetic clip** — covers the orchestrator glue (currently untested): the path-building, config wiring, normalization, and confidence steps that unit tests don't touch.
-- [x] **Unit tests for the newest modules** — `normalize.py` (39 tests, 7 test classes) and `vocabulary.py` (29 tests, 5 test classes) now have coverage. `spell_check.py`, `database.py`, `editor.py` remain untested.
+- [x] **Unit tests for the newest modules** — `normalize.py` (39 tests, 7 test classes), `vocabulary.py` (29 tests, 5 test classes), `spell_check.py` (14 tests), and `confidence.py` hard-rules (11 tests) now have coverage. `database.py`, `editor.py` remain untested.
 - [x] **CLI `--num-speakers 2` convenience** — added `--num-speakers` flag that sets both `min_speakers` and `max_speakers` to the same value. Useful for telephone calls with 2 speakers.
+- [x] **K5: `--spell-check` CLI flag now overrides config** — previously the CLI flag was silently ignored because `check_transcription()` read `enabled: false` from `config.yaml`. Now the CLI flag forces `spell_config["enabled"] = True`.
+- [x] **#5 stereo verification** — analyzed first 20 testdata files. All mono (1 channel). No stereo recordings in working set. Closing as verified.
 
 ### Phase 10: Norwegian — all dialects (extends Phase 8)
 
@@ -367,7 +369,7 @@ See the **Milestones toward 98% confidence / 2% WER** section above for the stru
 1. **M1 — Calibrated confidence + fasit baseline** (2–4h). Create ground-truth transcripts for 3 files from the test sample. Measure actual WER. Calibrate confidence scores. This is the single highest-ROI action — without a fasit, all other accuracy work is blind.
 2. **M2 — Dialect-aware confidence + vocabulary expansion** (8–16h). Expand dialect vocabulary, add dialect confidence scoring, implement `--preserve-dialect`, fix model caching.
 3. **M3 — Prompt engineering + domain vocabulary** (16–24h). Build domain vocabulary, optimize prompts, run full 410-file test set.
-4. **Phase 9 remaining items** — integration test on a tiny clip, unit tests for newest modules, CLI `--num-speakers 2` convenience flag.
+4. **Phase 9 remaining items** — integration test on a tiny clip (still open). All other Phase 9 items completed: unit tests for newest modules, CLI `--num-speakers 2`, K5 spell_check fix, #5 stereo verification.
 
 ### Utsettes / droppes (over-scope for personlig verktøy)
 - Web-editor (#8) — Subtitle Edit dekker behovet

@@ -37,7 +37,7 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 
 ### #5: Stereo audio collapsed to mono without channel separation option
 - **File:** `src/preprocess.py`
-- **Status:** Resolved (2026-05-29)
+- **Status:** Resolved (2026-05-30) — verified: no stereo files in working set
 - **Description:** `convert_to_mono()` always averaged both channels. For true stereo recordings with one speaker per channel, this mixed speakers and reduced diarization accuracy.
 - **Impact:** Lower transcription quality for stereo call recordings.
 - **Fix:** 
@@ -46,7 +46,7 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
   3. `preprocess_audio()` now detects `metadata.has_stereo_separation` and calls `split_stereo_channels()` when `output_dir` is provided, saving channel files for separate transcription.
   4. Added inline comments referencing ISSUES.md #5.
 - **Limitation:** The pipeline does not yet automatically transcribe each channel separately and merge results. Channel files are saved but downstream orchestration (`run_pipeline.py`) still processes the averaged mono. Full channel-aware pipeline is future work.
-- **Verification:** All test files are mono; stereo separation path is code-reviewed but not exercised on real data.
+- **Verification (2026-05-30):** Analyzed first 20 testdata files with `analyze_audio()`. All 20 are mono (1 channel). No stereo recordings found in the working set. Closing as verified — no code changes needed. If stereo files appear later, the `split_stereo_channels()` function is ready.
 
 ### #6: `database.py`, `spell_check.py`, `vocabulary.py` not wired into pipeline
 - **File:** `scripts/run_pipeline.py`

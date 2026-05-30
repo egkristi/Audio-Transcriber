@@ -404,7 +404,8 @@ class AudioTranscriberPipeline:
                 # Optional spell-checking
                 if spell_check:
                     logger.info("Running spell-check on primary transcription")
-                    spell_config = self.config.get("spell_check", {})
+                    spell_config = dict(self.config.get("spell_check", {}))
+                    spell_config["enabled"] = True  # CLI flag overrides config
                     full_text = " ".join(s.text for s in primary_segments)
                     spell_results = check_transcription(full_text, spell_config)
                     results["steps"]["spell_check"] = {

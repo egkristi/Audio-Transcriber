@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.17] - 2026-05-30
+
+### Added
+- **Hard-rule tests for `confidence.py`** — 11 new tests covering digit detection, capitalized OOV detection, repetition, English words, short segments, all-caps tokens, incomplete endings, and lowercase start detection.
+- **Unit tests for `spell_check.py`** — 14 tests covering NorwegianSpellChecker initialization, word checking (empty, short, acronyms), text checking, correction, number detection, proper noun detection, and check_transcription convenience function.
+- **K5 fix: `--spell-check` CLI flag now overrides config** — previously the CLI flag set `spell_check=True` in the pipeline, but `check_transcription()` read `enabled: false` from `config.yaml` and returned immediately. Now the CLI flag forces `spell_config["enabled"] = True` so the flag actually works.
+
+### Changed
+- **#5 stereo verification** — analyzed first 20 testdata files for stereo separation. All 20 are mono (1 channel). No stereo recordings found in the working set. Closing #5 as verified — no code changes needed.
+
 ## [0.1.16] - 2026-05-30
 
 ### Added
