@@ -127,6 +127,9 @@ Wired into the pipeline, but two known gaps remain:
 5. **Distrust audits — including your own.** Verify against code, not against doc summaries. An audit claiming "no drift" is not evidence of no drift.
 6. **Findings introduced during an audit must be added to `ISSUES.md` before being declared addressed.** Floating findings (like AUDIT K5) are not tracked work.
 7. **Use subagents for leverage.** Delegate research, QA review, architecture validation, optimal-solution search, documentation updates, code generation, and parallel exploration to subagents (§20). A subagent call costs less than a full turn of sequential tool calls — use them aggressively for everything you can.
+   - **Parallelize independent tasks** (§20.6) — fire multiple subagents simultaneously instead of sequentially.
+   - **Route to the right model** (§20.7) — `cheap` for docs/research, `best-coding` for implementation, `best-chat` for QA.
+   - **Use custom agents** (§20.9) for specialized, tool-restricted workflows.
 
 ---
 
@@ -263,6 +266,9 @@ At the start of every session, follow this sequence:
 5. **Update `CHANGELOG.md`** for every new feature or change.
 6. **Commit and push** after each logical change. One change per commit. Never force-push.
 7. **Use subagents throughout** — see §20 for when and how. Delegate research, QA, documentation, and parallel exploration aggressively. This workflow ensures the canonical trackers (`ISSUES.md`, `ROADMAP.md`, `CHANGELOG.md`) stay in sync with the code at all times.
+   - **Parallelize research** (§20.6): Fire subagents for independent file reads simultaneously.
+   - **Route by model** (§20.7): `cheap` for docs, `best-coding` for code, `best-chat` for review.
+   - **Custom agents** (§20.9): Define `.agent.md` files for specialized workflows.
 
 ---
 
@@ -393,6 +399,9 @@ If you are unsure whether a change is within your reliable capability, **split i
 - If your assistant supports it, add `AGENTS.md` (and `ISSUES.md`) to the always-included project context so these rules survive context truncation.
 - Long pipeline runs (CPU transcription is minutes per recording, §5) will exceed short tool timeouts — run them in the integrated terminal, not as a blocking agent tool call, and inspect the output dir afterward.
 - **Use subagents (§20) for any task that can be parallelized or delegated.** Do not do sequential research when a subagent can do it in one turn.
+- **Use parallel subagents (§20.6) for independent research tasks** — fire 3 subagents at once instead of doing 3 sequential reads. VS Code 2026 supports this natively.
+- **Route subagents to the right model (§20.7):** Use `cheap` for documentation and research, `best-coding` for implementation, `best-chat` for architecture review. Don't waste an expensive model on a grep task.
+- **Consider custom agents (§20.9)** for specialized workflows — a read-only research agent, a security scanning agent, or a documentation agent. Define them in `.agent.md` files.
 
 ---
 
@@ -401,6 +410,8 @@ If you are unsure whether a change is within your reliable capability, **split i
 Subagents (the `runSubagent` tool) are your **primary productivity multiplier**. Use them aggressively for everything: research, quality assurance, architecture validation, finding optimal solutions, parallel work, documentation, cost reduction, and code generation. A subagent call costs less than a full turn of sequential tool calls — and produces better results.
 
 **Core philosophy:** Subagents are not a luxury or an afterthought. They are how you work faster, better, cheaper, and more reliably. Every task that can be delegated, should be delegated. Every decision that can be validated, should be validated. Every doc that can be updated in parallel, should be.
+
+**VS Code 2026 multi-agent support:** This environment supports parallel subagents (§20.6), model routing by alias (§20.7), and custom agents with handoffs (§20.9). Use all three aggressively — they are designed to work together.
 
 ### 20.1 When to use subagents — the complete list
 
@@ -523,6 +534,32 @@ Turn 3 (cheap model): "Apply the improvements from the review. Update the functi
 
 This gives you near-expert quality at a fraction of the cost.
 
+#### Pattern J: Parallel research burst
+
+Fire multiple research subagents simultaneously to gather context fast:
+
+```
+Subagent 1 (fast): "Grep for 'vad_options' in src/transcribe.py. Return line numbers."
+Subagent 2 (cheap): "Read config.yaml and return the transcription section."
+Subagent 3 (cheap): "Read ISSUES.md and return all open issues."
+```
+
+Collect all results, combine insights, implement. Same cost as sequential, 3× faster.
+
+#### Pattern K: Custom agent handoff pipeline
+
+Use handoffs to create a plan → implement → review pipeline:
+
+```
+Step 1 (Research Agent): "Read the codebase and suggest 3 approaches for feature X."
+Step 2 (You): Choose the best approach.
+Step 3 (Implementation Agent): "Implement approach 2 for feature X."
+Step 4 (QA Agent): "Review the implementation for edge cases and bugs."
+Step 5 (You): Apply fixes, commit.
+```
+
+Each agent has the right tools and model for its job. The research agent is read-only (safe), the implementation agent has full editing, and the QA agent only reviews.
+
 #### Pattern I: Subagent-as-linter
 
 Before committing, have a subagent do a final quality pass:
@@ -557,13 +594,16 @@ Good: "Read `src/transcribe.py` lines 100-200. The `_split_long_segments` functi
 
 - **Use subagents for cheap research** instead of burning expensive context-window tokens on reading files you won't edit.
 - **Batch independent reads** into one subagent call rather than multiple sequential `read_file` calls.
-- **Use smaller/cheaper models for subagents** when the task is simple (grep, file reading, formatting). Reserve expensive models for architecture, code review, and complex reasoning.
+- **Use the `cheap` alias for simple tasks** (grep, file reading, formatting, documentation). Reserve `best-chat` or `claude-opus` for architecture, code review, and complex reasoning. The cost hierarchy is: `local` ≈ `fast` < `cheap` < `codestral` < `best-coding` < `best-chat` < `claude-opus`.
 - **One subagent call is cheaper than 10 sequential tool calls** — prefer delegation over iteration.
-- **Multi-model quality stack (Pattern H):** Use a cheap model for first drafts, an expensive model for review, then a cheap model to apply fixes. This gives expert quality at budget prices.
+- **Multi-model quality stack (Pattern H):** Use `cheap` for first drafts, `best-chat` for review, then `cheap` to apply fixes. This gives expert quality at budget prices.
 - **Parallelize everything:** Instead of doing 3 research tasks sequentially, fire 3 subagents in parallel. Same cost, 3× faster wall-clock time.
-- **Don't over-prompt:** A 50-word prompt to a cheap subagent costs less than a 500-word prompt. Be concise.
+- **Don't over-prompt:** A 50-word prompt to a `cheap` subagent costs less than a 500-word prompt. Be concise.
+- **Use `fast` for throwaway tasks:** If you just need a quick grep or file listing and won't use the result for anything critical, `fast` (Groq Llama) gives the lowest latency.
 
 ### 20.6 Parallel execution — the force multiplier
+
+VS Code now supports **running multiple subagents in parallel** (VS Code 2026-02 release). Fire off multiple tasks at once, get results faster, and save premium requests in the process. The main agent delegates work and only the final result flows back — intermediate exploration stays contained, keeping your primary context clean.
 
 When you have multiple independent tasks, fire subagents simultaneously:
 
@@ -584,26 +624,53 @@ This cuts wall-clock time in half for research-heavy sessions.
 | **Validation split** | Independent validation | Subagent A runs tests, B reviews diff, C checks for drift |
 | **Exploration split** | Independent approaches | Subagent A tries approach 1, B tries approach 2, C tries approach 3 |
 
-**Rule of thumb:** If you can describe two tasks that don't depend on each other, fire them in parallel. Don't wait.
+**Rule of thumb:** If you can describe two tasks that don't depend on each other, fire them in parallel. Don't wait. VS Code shows which tasks are running, which agent is being used, and lets you expand any subagent to see the full prompt and result.
 
 ### 20.7 Model routing — use the right tool for each job
 
-Different subagent models have different strengths. Route tasks to the model best suited for them:
+Different subagent models have different strengths. Route tasks to the model best suited for them.
 
-| Task type | Best model class | Why |
+#### Available models in this environment
+
+All models are served through a local LiteLLM proxy (`http://localhost:4000/v1`) plus direct connections. The following named shortcuts are configured and should be used by alias:
+
+| Alias | Model | Tool Calling | Vision | Context | Best for |
+|---|---|---|---|---|---|
+| `best-coding` | DeepSeek V4 Pro | ✅ | ❌ | 128K | Implementation, test writing, debugging |
+| `best-chat` | Claude Sonnet 4.6 | ✅ | ✅ | 200K | Architecture, code review, QA, vision |
+| `fast` | Groq Llama 4 Maverick | ✅ | ❌ | 128K | Quick research, grep, simple reads |
+| `cheap` | DeepSeek V4 Flash | ✅ | ❌ | 128K | Documentation, boilerplate, cost-sensitive tasks |
+| `local` | DeepSeek V4 (local) | ✅ | ❌ | 128K | Offline-capable tasks, sensitive data |
+| `codestral` | Codestral 25.08 | ✅ | ❌ | 256K | Large-context code generation, refactoring |
+
+Additional models available by full ID (use when specific capability needed):
+- `claude-opus` — deepest reasoning, 200K ctx, vision
+- `kimi-k2.6` — strong reasoning + vision, 128K ctx
+- `gemini-3-flash` — fastest vision-capable, 128K ctx
+- `qwen3.5-397b` — largest parameter count, no vision
+- `ministral-3-8b` / `ministral-3-14b` — lightweight cloud models
+
+#### Task-to-model routing table
+
+| Task type | Best model alias | Why |
 |---|---|---|
-| **Grep / file search / simple reads** | Smallest/cheapest available | Fast, cheap, good enough |
-| **Boilerplate code generation** | Small/medium coder model | Good at patterns, low cost |
-| **Test writing** | Medium coder model | Needs to understand code but not deep reasoning |
-| **Documentation updates** | Any model with good writing | Low complexity, high volume |
-| **Architecture design** | Large reasoning model | Needs trade-off analysis and system thinking |
-| **Code review / QA** | Large reasoning model | Needs to catch subtle bugs and edge cases |
-| **Debugging complex issues** | Large reasoning model | Needs to trace causality across modules |
-| **Security review** | Large model with security training | Needs to know OWASP, injection patterns, etc. |
-| **Performance optimization** | Large reasoning model | Needs to understand algorithmic complexity |
-| **Decision records (ADRs)** | Medium model with good writing | Needs to articulate trade-offs clearly |
+| **Grep / file search / simple reads** | `fast` | Lowest latency, good enough quality |
+| **Boilerplate code generation** | `cheap` or `codestral` | Low cost, codestral for large outputs |
+| **Test writing** | `best-coding` | Needs code understanding + tool calling |
+| **Documentation updates** | `cheap` | Low complexity, high volume, minimal cost |
+| **Architecture design** | `best-chat` or `claude-opus` | Deep reasoning, trade-off analysis |
+| **Code review / QA** | `best-chat` | Catches subtle bugs, edge cases |
+| **Debugging complex issues** | `best-coding` or `best-chat` | Cross-module causality tracing |
+| **Security review** | `best-chat` | Security-aware reasoning |
+| **Performance optimization** | `best-coding` | Algorithmic complexity understanding |
+| **Vision tasks (images, UI)** | `best-chat` or `kimi-k2.6` | Vision-capable, strong reasoning |
+| **Decision records (ADRs)** | `cheap` | Good writing, minimal cost |
+| **Large refactoring (>500 LOC)** | `codestral` | 256K context, sees entire files |
+| **Offline / sensitive data** | `local` | Never leaves your machine |
 
-**If your platform supports model selection per subagent call, use it.** Don't use a $0.10 model for a $0.01 task, and don't use a $0.01 model for a task that needs deep reasoning.
+**Cost hierarchy (cheapest → most expensive):** `local` ≈ `fast` < `cheap` < `codestral` < `best-coding` < `best-chat` < `claude-opus`
+
+**If your platform supports model selection per subagent call, use it.** Don't use an expensive reasoning model for a grep task, and don't use a cheap model for architecture validation. The `cheap` alias exists precisely for high-volume, low-complexity work — use it aggressively for documentation, research, and boilerplate.
 
 ### 20.8 Subagent safety rules
 
@@ -615,3 +682,69 @@ Different subagent models have different strengths. Route tasks to the model bes
 6. **Pin file paths and line numbers** in your prompts — don't assume the subagent will find them correctly.
 7. **Specify the output format explicitly** — "Return a bullet list" is better than "Tell me what you find."
 8. **Set expectations about thoroughness** — say "quick scan" or "thorough review" so the subagent budgets its effort appropriately.
+
+### 20.9 Custom agents and handoffs (VS Code 2026)
+
+VS Code supports **custom agents** — specialized agent definitions with their own tools, instructions, and model. Combine with **handoffs** to create workflows that transition from plan → implement → review — all orchestrated from your main session.
+
+#### When to create a custom agent
+
+| Agent type | Tools | Model | Purpose |
+|---|---|---|---|
+| **Research agent** | Read-only (file search, grep, web fetch) | `cheap` or `fast` | Explore codebase without risk of edits |
+| **Implementation agent** | Full editing + terminal | `best-coding` | Write code, run tests, apply fixes |
+| **QA/review agent** | Read-only + test runner | `best-chat` | Review diffs, validate architecture |
+| **Security agent** | Read-only + grep | `best-chat` | Scan for vulnerabilities, secrets |
+| **Documentation agent** | Read-only + file edit | `cheap` | Update CHANGELOG, README, ROADMAP |
+
+#### Handoff workflow pattern
+
+```
+Main session (you)
+  │
+  ├── Handoff to Research Agent ──► Returns findings
+  │
+  ├── You implement based on findings
+  │
+  ├── Handoff to QA Agent ──► Returns review
+  │
+  └── You apply QA feedback → commit
+```
+
+#### Handoff prompt template
+
+```
+Handoff to [Agent Name]: "I need you to [task]. 
+Context: [2-3 sentences about what's happening].
+Files to examine: [paths].
+Output: [bullet list / code / summary].
+Do NOT edit any files unless explicitly instructed."
+```
+
+#### Custom agent definition example (`.agent.md`)
+
+```markdown
+---
+name: research-agent
+model: cheap
+instructions: |
+  You are a read-only research agent. You can search files, read code,
+  and fetch web pages. You must NEVER edit files. Return concise,
+  well-organized findings.
+tools:
+  - read_file
+  - grep_search
+  - file_search
+  - fetch_webpage
+---
+```
+
+Create `.agent.md` files in the project root or `.vscode/` directory. VS Code auto-discovers them and makes them available for handoffs.
+
+#### Key benefits of custom agents + handoffs
+
+- **Specialized behavior per task** — each agent has the right tools and model for its job
+- **Safety through tool restriction** — research agents can't accidentally edit files
+- **Cost optimization** — cheap models for research, expensive only for implementation/review
+- **Parallel handoffs** — fire a research agent and a documentation agent simultaneously
+- **Traceability** — VS Code shows which agent ran, what prompt was used, and what it returned
