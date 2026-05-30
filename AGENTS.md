@@ -1,4 +1,4 @@
-# AGENT.md — Audio-Transcriber AI Agent Instructions
+# AGENTS.md — Audio-Transcriber AI Agent Instructions
 
 > Read this file first. Then read `AUDIT.md`, `ISSUES.md`, and the latest `CHANGELOG.md` entry. **Verify the current state against the actual code before trusting any document — drift has been observed in this repo, including in audit reports.**
 

@@ -1,5 +1,19 @@
 # Audio-Transcriber Roadmap
 
+## Vision
+
+The north star for this project is **accurate transcription of spoken Norwegian in every dialect** — not just standard Bokmål/Eastern Norwegian, but Northern Norwegian (Nordland, Troms, Finnmark), Trøndersk, Vestlandsk, Sørlandsk, and the rest — preserving dialect forms rather than normalizing them away.
+
+The longer-term vision is to extend the same dialect-aware approach to **all the Nordic languages**: Swedish, Danish, Norwegian (Bokmål + Nynorsk), Icelandic, and Faroese, plus Finnish, and ideally the Sámi languages — each with their regional dialects. The architecture is deliberately language-agnostic underneath (analyze → preprocess → diarize → transcribe → confidence → review), so adding a language should mean adding a model + a vocabulary/dialect pack + alignment model, not rebuilding the pipeline.
+
+Guiding principles:
+- **Dialect is valid language, not error.** Flag dialect/standard mismatches for awareness; never silently "correct" dialect to a standard form.
+- **Measure before optimizing.** No accuracy claim is real without a fasit (ground-truth transcript) and a WER/CER number. This gate applies to every language and dialect we add.
+- **Human-in-the-loop, honestly.** The tool prioritizes review; it does not pretend to be error-free. "Confidently wrong" outputs (names, numbers, dialect normalization) are surfaced regardless of model confidence.
+- **Local-first and privacy-respecting.** Recordings are private. Processing stays on the operator's machine; personal data is never committed.
+
+Sequencing: **(1)** nail Norwegian-all-dialects with a measurable WER, **(2)** generalize the language/dialect packs into a pluggable structure, **(3)** add the remaining Nordic languages one at a time, each gated on its own fasit.
+
 ## Current implementation status
 
 This roadmap reflects the existing implementation, identified gaps from the audit, and the next deliverables.
@@ -102,6 +116,45 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 - [ ] **Dialect-to-standard alignment** — research whether a dialect normalization step (dialect → Bokmål) before transcription improves accuracy, or if dialect-preserving transcription is better. Current hypothesis: dialect-preserving is better because Whisper was trained on Bokmål and dialect normalization would add another error source.
 - [ ] **Fine-tuned dialect model** — if a dialect corpus exists, fine-tune nb-whisper-large-verbatim on Northern Norwegian speech using LoRA. Compare WER against the base model.
 
+### Phase 9: Engineering hardening & correctness (from 2026-05-30 audit)
+
+> These are concrete defects and gaps found in a code/output audit. They are cheap, high-confidence fixes that protect the accuracy work — worth doing before piling on more features. See ISSUES.md #31–#37.
+
+- [ ] **Fix editor Step 6 (ISSUES.md #31)** — Step 6 never runs because it reconstructs the SRT filename without the `_preprocessed` infix. Reuse `primary_output` from `transcribe_audio()` instead of rebuilding the path.
+- [ ] **Fix comparison config keys (ISSUES.md #32)** — `compare.py` reads `min_agreement_threshold` / `low_confidence_threshold` that don't exist in `config.yaml` (which has `min_agreement_score`, and puts `low_confidence_threshold` under `transcription`). Thresholds silently fall back to defaults. Align the keys and add a test asserting a non-default YAML value reaches the comparer.
+- [ ] **Cache models across files in batch (ISSUES.md #33)** — load the WhisperX, wav2vec2 alignment, and pyannote models once per run and reuse them; today every file reloads multi-GB models, dominating batch runtime.
+- [ ] **Sync version (ISSUES.md #34)** — bump `pyproject.toml` (0.1.7) to match `CHANGELOG.md` (0.1.13) and add a release checklist / single source of truth.
+- [ ] **Make normalization opt-in & preserve raw output (ISSUES.md #35)** — verbatim model output is currently overwritten in place by heuristic punctuation/capitalization. Add `--normalize` (default off for verbatim), always keep the raw model text, and treat normalization as a suggestion layer.
+- [ ] **Privacy & data handling (ISSUES.md #36)** — remove real personal names from committed source (`NORWEGIAN_PROPER_NOUNS`); load proper-noun/vocabulary lists from a gitignored local data file. Document a data-retention policy and consider optional at-rest encryption and a `--redact` mode.
+- [ ] **Clean up `--diarize` flag (ISSUES.md #37)** — it's a no-op redundant with the default-on behavior; either make diarization opt-in or drop the redundant flag.
+- [ ] **Integration test on a tiny real/synthetic clip** — covers the orchestrator glue (currently untested): the path-building, config wiring, normalization, and confidence steps that unit tests don't touch.
+- [ ] **Unit tests for the newest modules** — `normalize.py`, `vocabulary.py`, `spell_check.py`, `database.py`, `editor.py` have no tests; they are also where the most recent churn is.
+- [ ] **CLI `--num-speakers 2` convenience** — lock 2-party telephone calls to two speakers (config already supports `num_speakers_override`; surface it on the CLI).
+
+### Phase 10: Norwegian — all dialects (extends Phase 8)
+
+> Vision step 1: a single Norwegian pipeline that handles any dialect with a measurable WER. Phase 8 covers Northern Norwegian specifically; this phase generalizes it.
+
+- [ ] **Pluggable dialect packs** — refactor the Northern-Norwegian-specific maps (`NORWEGIAN_DIALECT_MAP`, `DIALECT_VOCABULARY`, place names) into per-dialect data files (`data/dialects/<region>.json`) with a common loader, so adding a dialect is data, not code.
+- [ ] **All major Norwegian dialect regions** — Trøndersk, Vestlandsk, Sørlandsk, Østlandsk, Innlandet, plus finer-grained sub-regions, each as a dialect pack (vocabulary + standard-form mapping for flagging).
+- [ ] **Automatic dialect-region detection** — classify a recording's dialect from distinctive markers (e.g. `eg`→Vestlandsk, `dæm`→Trøndersk, `æ`+`ikkje`→Nordnorsk) and auto-select the matching pack; fall back to a generic Norwegian pack.
+- [ ] **Bokmål + Nynorsk alignment routing** — already partially present (`nb-wav2vec2-1b-bokmaal` vs `-nynorsk`); make the written-standard target selectable per file/segment.
+- [ ] **Dialect WER tracking** — once fasits exist, report WER per dialect so we can see which dialects the base model handles well vs. poorly and target effort accordingly.
+
+### Phase 11: Nordic languages (long-term vision)
+
+> Vision step 2–3: generalize the language/dialect pack structure, then add Nordic languages one at a time — each gated on its own fasit + WER baseline before it's considered "supported".
+
+- [ ] **Language pack abstraction** — formalize a `LanguagePack` (transcription model, alignment/wav2vec2 model, language code, vocabulary, dialect packs, normalization rules) so the pipeline is parameterized by language rather than hardcoded to `"no"`. Remove the `language="no"` hardcodes in `transcribe.py`/`analyze.py`.
+- [ ] **Top-level language auto-detection & routing** — use the existing faster-whisper language detector (already in `analyze.py`) to route each file to the right language pack instead of always falling back to `"no"`.
+- [ ] **Swedish** — `KBLab/kb-whisper-large` (or current best Swedish ASR) + Swedish wav2vec2 alignment + dialect packs (e.g. Skånska, Norrländska, Finlandssvenska, Gotländska).
+- [ ] **Danish** — best-available Danish Whisper/ASR + Danish alignment + dialect packs (Jysk, Fynsk, Bornholmsk, etc.).
+- [ ] **Icelandic & Faroese** — evaluate model availability; these are lower-resource and may need community/fine-tuned models.
+- [ ] **Finnish** — Finnish is non–North-Germanic but central to the Nordics; evaluate `Finnish-NLP`/whisper-fi models and Finnish dialect handling.
+- [ ] **Sámi languages (research / stretch)** — North/Lule/South Sámi are very low-resource; likely requires corpus collection and fine-tuning. Track as research, set expectations honestly.
+- [ ] **Cross-Nordic code-switching** — real Nordic calls mix languages (e.g. Norwegian + Swedish, or Norwegian + English loanwords). Detect and handle intra-call language switches rather than forcing one language for the whole file.
+- [ ] **Per-language fasit + WER gate** — no language is marked "supported" until it has a ground-truth clip and a published WER/CER baseline, mirroring the Norwegian gate.
+
 ## Test run findings (2026-05-30)
 
 Real pipeline execution on `testdata/Call recording Elida Anna Wiktoria Kristiansen_251023_190409.m4a` (142s, 48kHz AAC) with `--dialect northern_norwegian` revealed:
@@ -194,8 +247,13 @@ Real pipeline execution on `testdata/Call recording Elida Anna Wiktoria Kristian
 
 ## Future ideas
 
-- Fine-tune a Norwegian ASR model on domain-specific vocabulary (see Phase 8 for dialect fine-tuning roadmap)
+- Fine-tune a Norwegian ASR model on domain-specific vocabulary (see Phase 8 / Phase 10 for the dialect fine-tuning roadmap)
+- **Nordic-language support** — now a first-class vision item; see Phase 11 (Swedish, Danish, Icelandic, Faroese, Finnish, Sámi, each with dialects and its own WER gate)
+- **Fasit-builder helper** — a small tool/UI to turn a recording + corrected SRT into a ground-truth fixture, lowering the cost of the WER gate that every language/dialect depends on
+- **Streaming / near-real-time transcription** — process long calls incrementally instead of whole-file
+- **Speaker naming & identity** — let the reviewer map `SPEAKER_00`/`SPEAKER_01` to real names, and explore voiceprint-based recurring-speaker identification across recordings (with explicit consent/privacy controls)
+- **Diarization-aware confidence** — flag turn boundaries and cross-talk/overlap regions as high-priority for review (currently `vad_overlap` is a placeholder in `confidence.py`)
+- **Richer export formats** — speaker-labeled plain text / Markdown transcripts, JSON for downstream NLP, and optional redacted exports
 - Add REST API / local server wrapper around pipeline
 - Provide a web-based review editor with waveform and speaker labels
 - Containerize with Docker for reproducible deployments
-- Add support for Swedish / Danish / Finnish in addition to Norwegian

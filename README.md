@@ -2,6 +2,20 @@
 
 Et Python-basert transkripsjonssystem for norsk tale, med særlig vekt på **nordnorske dialekter** (Nordland, Troms, Finnmark). Prosjektet kombinerer en flerfase-pipeline for analyse, adaptiv forhåndsbehandling, speaker diarization, flermodell-transkripsjon, sammenligning og manuell sluttkorrektur.
 
+## Visjon
+
+Målet er å transkribere **norsk tale på alle dialekter** nøyaktig — ikke bare standard bokmål/østnorsk, men nordnorsk, trøndersk, vestlandsk, sørlandsk og resten — og **bevare dialektformene** i stedet for å normalisere dem bort. Dialekt er gyldig norsk, ikke feil.
+
+På lengre sikt skal samme dialektbevisste tilnærming utvides til **alle de nordiske språkene**: svensk, dansk, norsk (bokmål + nynorsk), islandsk og færøysk, samt finsk — og på sikt de samiske språkene — hver med sine regionale dialekter. Arkitekturen er bevisst språkagnostisk under panseret (analyse → forhåndsbehandling → diarization → transkripsjon → konfidens → review), slik at et nytt språk i prinsippet betyr en ny modell + en vokabular-/dialektpakke + justeringsmodell, ikke en ombygging av pipeline.
+
+Bærende prinsipper:
+- **Dialekt bevares** — dialekt/standard-avvik flagges for bevissthet, men «rettes» aldri stille om til standardform.
+- **Mål før du optimaliserer** — ingen nøyaktighetspåstand er reell uten en fasit (ground-truth) og et WER/CER-tall. Dette gjelder hvert språk og hver dialekt vi legger til.
+- **Menneske-i-loopen, ærlig** — verktøyet prioriterer review og later ikke som det er feilfritt. «Selvsikkert feil» output (navn, tall, dialektnormalisering) løftes frem uavhengig av modellens konfidens.
+- **Lokalt og personvernvennlig** — opptak er private. Prosessering skjer på operatørens egen maskin; persondata committes aldri.
+
+Rekkefølge: **(1)** få norsk-alle-dialekter på plass med målbar WER, **(2)** generalisér språk-/dialektpakkene til en plugg-bar struktur, **(3)** legg til de øvrige nordiske språkene ett om gangen, hvert med sin egen fasit. Se `ROADMAP.md` Phase 8/10/11 for detaljer.
+
 ## Hva er på plass nå
 
 Denne repoen inneholder en fungerende proof-of-concept pipeline med de viktigste modulene implementert, men også flere kjente begrensninger og tekniske gap som må adresseres før produksjon.
