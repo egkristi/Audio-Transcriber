@@ -62,8 +62,8 @@ Denne repoen inneholder en fungerende proof-of-concept pipeline med de viktigste
 Se `ISSUES.md` for fullstendig og oppdatert liste over åpne og løste problemer. Nedenfor er et sammendrag:
 
 - **#8:** `editor.py` er fortsatt kun en SRT-eksportfunksjon, ikke en ekte web-editor — korrekt parkert, Subtitle Edit dekker behovet.
-- **#5:** Stereo kanal-splitting er implementert, men pipeline kjører fortsatt på averaged mono. Full kanal-integrasjon er fremtidig arbeid.
-- **#21:** Norsk stavekontroll krever ekstern ordbok (NST/UiB) — feature er deaktivert inntil ordbok er på plass.
+- **#5 (delvis):** Stereo kanal-splitting er implementert (`split_stereo_channels()`), men pipeline kjører fortsatt på averaged mono. Full kanal-integrasjon er fremtidig arbeid.
+- **#21 (delvis):** Norsk stavekontroll krever ekstern ordbok (NST/UiB) — feature er deaktivert inntil ordbok er på plass. `--spell-check` flagget eksisterer men er en no-op uten ordbok.
 - Ingen CI-pipeline (GitHub Actions) — over-scope for personlig verktøy.
 
 ## Rask installasjon
