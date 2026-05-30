@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.18] - 2026-05-30
+
+### Added
+- **Integration test for pipeline orchestrator** (`tests/test_integration.py`) — 12 tests covering the full pipeline glue: step sequencing, diarization opt-in/out, spell-check wiring, normalization opt-in/out, vocabulary loading, model comparison, result structure, error handling, confidence aggregation, and step filtering. Heavy dependencies (WhisperX, pyannote) are mocked for fast deterministic testing.
+
+### Changed
+- **ROADMAP.md** — Phase 9 integration test item marked as completed. Test count bumped to 146.
+
 ## [0.1.17] - 2026-05-30
 
 ### Added
