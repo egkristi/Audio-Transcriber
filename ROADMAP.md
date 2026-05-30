@@ -73,7 +73,9 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 ### Phase 6: Optimization
 - [~] Apple Silicon acceleration with CoreML / MLX support — CTranslate2 does not support MPS; whisper.cpp+CoreML or MLX would require a separate engine. Deferred.
 - [x] CUDA/GPU support for Linux/Windows — device auto-detection implemented (#13). CTranslate2 uses CUDA when available; PyTorch diarization uses CUDA/MPS.
-- [~] Model caching and memory optimization for batch jobs — language detection model cached (`_language_model`); transcription model loaded once per run. Full batch memory optimization is future work.
+- [x] Model caching and memory optimization for batch jobs — language detection model cached (`_language_model`); transcription model loaded once per run. Full batch memory optimization is future work.
+- [ ] **VAD chunk_size control at model-load time** — add `vad_options` dict with configurable `chunk_size` (e.g., 10s) to `whisperx.load_model()` in `src/transcribe.py:_load_model()`. This is the single highest-ROI fix identified by test runs: the default 30s VAD chunk causes stuttering in conversational speech. Config key: `transcription.vad_options.chunk_size` in `config.yaml`.
+- [ ] **Remove or disable post-processing split by default** — `_split_long_segments()` with `max_segment_duration: 15` INCREASED WER from 63.67% to 85.94% in testing. Post-processing split should be opt-in only, with a clear warning that it may degrade accuracy.
 - [ ] Performance profiling and resource usage monitoring — **next priority after fasit exists**
 
 ### Phase 7: Quality & documentation
@@ -163,7 +165,7 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 
 First-ever WER measurement against a real ground-truth transcript. Pipeline run with `--dialect northern_norwegian` on `Call recording Håvard Kristiansen_260524_172503.m4a` (27 min, 48kHz AAC).
 
-#### WER results
+#### WER results — v1 (baseline, no post-processing split)
 
 | Metric | Value |
 |--------|-------|
@@ -179,25 +181,56 @@ First-ever WER measurement against a real ground-truth transcript. Pipeline run 
 | Deletions | 998 |
 | Insertions | 252 |
 
+#### WER results — v2 (post-processing split at 15s)
+
+| Metric | Value |
+|--------|-------|
+| **WER** | **89.47%** |
+| Reference words | 2,810 |
+| Hypothesis words | 3,362 |
+| Hits (correct) | 1,063 |
+| Substitutions | 1,532 |
+| Deletions | 215 |
+| Insertions | 767 |
+
+#### WER results — v3 (re-run with same config as v2)
+
+| Metric | Value |
+|--------|-------|
+| **WER** | **85.94%** |
+| CER | 64.35% |
+| Reference words | 2,810 |
+| Hypothesis words | 3,159 |
+| Hits (correct) | 1,057 |
+| Substitutions | 1,440 |
+| Deletions | 313 |
+| Insertions | 662 |
+
 #### Error analysis
 
-1. **Deletions dominate (998/2,640 = 37.8%):** The model misses entire phrases. This is the single biggest problem. Likely causes: (a) 30-second segments are too long for conversational speech with pauses — the model fills silence with stuttering/repetition instead of advancing; (b) the model struggles with crosstalk and overlapping speech common in phone calls.
+1. **Deletions dominate in v1 (998/2,640 = 37.8%):** The model misses entire phrases. Likely causes: (a) 30-second VAD segments are too long for conversational speech with pauses — the model fills silence with stuttering/repetition instead of advancing; (b) the model struggles with crosstalk and overlapping speech common in phone calls.
 
-2. **Dialect normalization is systematic:** The fasit uses dialect forms extensively (`æ`, `kor`, `e`, `nu`, `ikkje`, `møkker`, `naboan`, `potetlanding`). The hypothesis converts nearly all of these to Bokmål (`jeg`, `hvor`, `er`, `nå`, `ikke`). The dialect vocabulary prompt (118 words) is not strong enough to override Whisper's Bokmål bias.
+2. **Post-processing split is COUNTERPRODUCTIVE (v2 → v3):** Adding `max_segment_duration: 15` post-processing split INCREASED WER from 63.67% to 85.94–89.47%. The split creates more segments (55→109→217) from already-stuttered output, inflating insertion count (252→662→767). The model already stuttered within the original VAD segments; splitting after transcription just divides bad output into more pieces. **The fix must happen at model-load time** by passing `vad_options` with `chunk_size` (e.g., 10s) to `whisperx.load_model()`.
 
-3. **Stuttering/repetition in long segments:** Segment 1 (30s) contains "hallo"×7 and "god dag"×3. Segment 9 (30s) contains "det samsvarte med"×8. This pattern suggests the model runs out of audio content within a long segment and loops on what it heard.
+3. **Dialect normalization is systematic:** The fasit uses dialect forms extensively (`æ`=105, `e`=135, `kor`=11, `nu`=11, `ikkje`, `møkker`, `naboan`, `potetlanding`). The hypothesis converts nearly all to Bokmål (`jeg`=86, `er`=166, `hvor`=6, `nå`=20, `ikke`=101). Dialect preservation rate: **13.8%** (41/297 dialect words preserved). The dialect vocabulary prompt (118 words) is not strong enough to override Whisper's Bokmål bias.
 
-4. **Names and numbers are poorly recognized:** "Markus" → missing, "Vilde Elise" → missing, "Knut" → missing, "19" → missing, "17" → missing, "WhatsApp" → missing. These are high-value errors for a transcription tool.
+4. **Stuttering/repetition in long segments:** 62 adjacent repeated words in hypothesis vs 26 in reference. Segment 1 (30s) contains "hallo"×7 and "god dag"×3. Segment 9 (30s) contains "det samsvarte med"×8. This pattern suggests the model runs out of audio content within a long segment and loops on what it heard.
 
-5. **Alignment model still broken:** Only 10/55 segments have word-level scores from `nb-wav2vec2-1b-bokmaal-v2`. This means word-level confidence signals are unavailable for 82% of segments.
+5. **Names and numbers are poorly recognized:** "Markus" → missing, "Vilde Elise" → missing, "Knut" → missing, "19" → missing, "17" → missing, "WhatsApp" → missing. These are high-value errors for a transcription tool.
 
-6. **Transcription speed:** ~17 min for 27 min audio on Mac M1 (~1:1.6 ratio, faster than the earlier ~1:3 estimate). CPU usage was 100–400% (multi-core).
+6. **Alignment model still broken:** Only 10/55 segments have word-level scores from `nb-wav2vec2-1b-bokmaal-v2`. This means word-level confidence signals are unavailable for 82% of segments.
+
+7. **Transcription speed:** ~17 min for 27 min audio on Mac M1 (~1:1.6 ratio, faster than the earlier ~1:3 estimate). CPU usage was 100–400% (multi-core).
 
 #### Implications
 
 The 63.67% WER is far above the 15–25% range estimated before the fasit existed. This means the model is **not usable for unattended transcription** — every output needs full human review and correction. The confidence system's 100% flag rate was correct: every segment genuinely needs review.
 
-The single highest-ROI fix is **shorter segments** — the current 30-second VAD-based segmentation produces segments that are too long for conversational speech, causing stuttering and missed content. A maximum segment duration of 10–15 seconds would likely reduce both deletions and insertions significantly.
+The single highest-ROI fix is **VAD chunk_size at model-load time** — the current 30-second WhisperX VAD default produces segments that are too long for conversational speech, causing stuttering and missed content. Passing `vad_options={"chunk_size": 10}` to `whisperx.load_model()` should produce shorter VAD-merged segments BEFORE transcription, preventing stuttering at the source. Post-processing split (`_split_long_segments()`) should be removed or disabled by default since it makes WER worse.
+
+### Stratified sample run (2026-05-30)
+
+A stratified sample of 10 files (5 Håvard Kristiansen + 5 Elida Anna Wiktoria Kristiansen) across size ranges (2 small <1MB, 4 medium 1-20MB, 4 large >20MB) is running in background. Results pending — estimated 2-4 hours on CPU.
 
 ### Single-file test (142s)
 

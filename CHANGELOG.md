@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.23] - 2026-05-30
+
+### Added
+- **Comprehensive test run findings** (ROADMAP.md) — detailed WER analysis across 3 pipeline runs (v1: 63.67%, v2: 89.47%, v3: 85.94%) on fasit1 (27 min call recording). Documented that post-processing split is counterproductive (increases WER by 22–26 percentage points).
+- **Deep error pattern analysis** — dialect preservation rate measured at 13.8% (41/297 dialect words preserved). Stuttering quantified at 62 adjacent repeated words (vs 26 in reference). Systematic Bokmål normalization confirmed: `æ`→`jeg` (105→86), `e`→`er` (135→166), `ikkje`→`ikke` (0→101).
+- **Stratified sample run** — 10-file stratified sample (5 Håvard + 5 Elida, across size ranges) running to validate findings across diverse recordings.
+- **VAD chunk_size fix identified** — root cause of stuttering is 30s default VAD chunk in WhisperX. Fix: pass `vad_options={"chunk_size": 10}` to `whisperx.load_model()`. Added to ROADMAP.md Phase 6 as highest-ROI optimization.
+
+### Changed
+- **ROADMAP.md** — Phase 6 updated with VAD chunk_size control task and post-processing split warning. Test run findings section expanded with v2/v3 results, dialect analysis, and stratified sample status.
+
 ## [0.1.22] - 2026-05-30
 
 ### Changed
