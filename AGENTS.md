@@ -126,6 +126,7 @@ Wired into the pipeline, but two known gaps remain:
 4. **Honest reporting.** Regressions, failed tests, or surprising behavior on real audio are stated explicitly. Never paper over.
 5. **Distrust audits — including your own.** Verify against code, not against doc summaries. An audit claiming "no drift" is not evidence of no drift.
 6. **Findings introduced during an audit must be added to `ISSUES.md` before being declared addressed.** Floating findings (like AUDIT K5) are not tracked work.
+7. **Use subagents for leverage.** Delegate research, QA review, documentation updates, and parallel exploration to subagents (§20). A subagent call costs less than a full turn of sequential tool calls — use them aggressively.
 
 ---
 
@@ -261,6 +262,7 @@ At the start of every session, follow this sequence:
    - If a new feature is needed, **add to `ROADMAP.md`** under the appropriate phase.
 5. **Update `CHANGELOG.md`** for every new feature or change.
 6. **Commit and push** after each logical change. One change per commit. Never force-push.
+7. **Use subagents throughout** — see §20 for when and how. Delegate research, QA, documentation, and parallel exploration aggressively.
 
 This workflow ensures the canonical trackers (`ISSUES.md`, `ROADMAP.md`, `CHANGELOG.md`) stay in sync with the code at all times.
 
@@ -392,3 +394,125 @@ If you are unsure whether a change is within your reliable capability, **split i
 - After any file edit, re-run the relevant `pytest` target before moving on — don't batch edits across modules without a green checkpoint.
 - If your assistant supports it, add `AGENTS.md` (and `ISSUES.md`) to the always-included project context so these rules survive context truncation.
 - Long pipeline runs (CPU transcription is minutes per recording, §5) will exceed short tool timeouts — run them in the integrated terminal, not as a blocking agent tool call, and inspect the output dir afterward.
+- **Use subagents (§20) for any task that can be parallelized or delegated.** Do not do sequential research when a subagent can do it in one turn.
+
+---
+
+## 20. Subagent Workflow — Work Faster, Better, Cheaper
+
+Subagents (the `runSubagent` tool) let you delegate work to parallel agents. Use them aggressively to reduce cost, increase parallelism, and improve quality. A subagent call costs less than a full turn of sequential tool calls — and produces better results.
+
+### 20.1 When to use subagents
+
+| Situation | Why subagent | Example |
+|---|---|---|
+| **Research** | Don't burn your context on reading files you won't edit | "Read `src/transcribe.py` and tell me how `_split_long_segments` works" |
+| **Quality assurance** | Get a second opinion on architecture decisions | "Review my planned change to `config.py` — is there a simpler approach?" |
+| **Documentation** | Update docs while you keep coding | "Update `CHANGELOG.md` with the changes I just made" |
+| **Parallel exploration** | Investigate multiple options simultaneously | "Search for the best way to implement X in 3 different approaches" |
+| **Code review** | Catch bugs before they reach the test suite | "Review this diff for edge cases I might have missed" |
+| **Test writing** | Write tests while you implement the feature | "Write pytest tests for the new `_split_long_segments` function" |
+| **Architecture validation** | Validate design decisions against constraints | "Will this approach work on CPU-only Mac? Check for MPS/CUDA assumptions" |
+| **Cost reduction** | Small models for simple tasks, big models for hard ones | "Use a cheap subagent to grep the codebase, then use the result yourself" |
+
+### 20.2 When NOT to use subagents
+
+- **Writing code that needs your current context.** If the subagent doesn't have the same context as you, it will produce wrong results. Pass enough context in the prompt.
+- **Tiny tasks** (reading one file, making one edit). The overhead isn't worth it.
+- **Tasks requiring the full conversation history.** Subagents are stateless — they don't see previous turns.
+
+### 20.3 Subagent patterns
+
+#### Pattern A: Research → You implement
+
+Delegate research to a subagent, then implement based on its findings:
+
+```
+Subagent prompt: "Read src/transcribe.py and src/config.py. Find how
+max_segment_duration is used. Return: (1) the exact line numbers where it's read,
+(2) the default value if not set, (3) any validation logic. Do NOT edit any files."
+```
+
+#### Pattern B: You implement → Subagent QA
+
+After making changes, have a subagent review them:
+
+```
+Subagent prompt: "Review this diff for src/transcribe.py. Check for:
+(1) edge cases with empty segments, (2) type mismatches, (3) silent failures.
+The function splits segments longer than max_duration into equal chunks.
+Do NOT edit any files. Return a bullet list of concerns."
+```
+
+#### Pattern C: Parallel subagents
+
+Fire multiple subagents at once for independent tasks:
+
+```
+Subagent 1: "Read ISSUES.md and return all open issues with their descriptions."
+Subagent 2: "Read ROADMAP.md and return the next 3 uncompleted milestones."
+Subagent 3: "Run `uv run pytest -q` and return the output."
+```
+
+Then combine their results in your main context.
+
+#### Pattern D: Subagent for documentation
+
+Delegate CHANGELOG.md / ROADMAP.md updates while you keep coding:
+
+```
+Subagent prompt: "Update CHANGELOG.md at /Users/erling/code/Audio-Transcriber/CHANGELOG.md.
+Add a new entry for v0.1.22 with these changes: [list changes].
+Use the same format as the previous entry. Do NOT modify any other files."
+```
+
+#### Pattern E: Architecture / design review
+
+Before committing to a design, get a subagent to validate it:
+
+```
+Subagent prompt: "I plan to add a --max-segments CLI flag to run_pipeline.py that
+overrides config.yaml's max_segment_duration. Read the relevant files and tell me:
+(1) Is there already a pattern for CLI-overrides-config in this codebase?
+(2) What's the simplest way to implement this?
+(3) Any pitfalls with argparse + yaml override patterns?
+Do NOT edit any files."
+```
+
+### 20.4 Writing effective subagent prompts
+
+A good subagent prompt has four parts:
+
+1. **Context** — what the subagent needs to know (2-3 sentences max)
+2. **Task** — exactly what to do (research, review, write, edit)
+3. **Scope** — what files to touch and what NOT to touch
+4. **Output format** — what to return (bullet list, code, summary)
+
+Bad: "Check the code for bugs."
+Good: "Read `src/transcribe.py` lines 100-200. The `_split_long_segments` function splits segments >15s. Check for: (1) off-by-one errors in the split calculation, (2) whether word-level timestamps are preserved correctly, (3) what happens if a segment has 0 words. Return a bullet list. Do NOT edit any files."
+
+### 20.5 Cost optimization
+
+- **Use subagents for cheap research** instead of burning expensive context-window tokens on reading files you won't edit.
+- **Batch independent reads** into one subagent call rather than multiple sequential `read_file` calls.
+- **Use smaller/cheaper models for subagents** when the task is simple (grep, file reading, formatting).
+- **One subagent call is cheaper than 10 sequential tool calls** — prefer delegation over iteration.
+
+### 20.6 Parallel execution
+
+When you have multiple independent tasks, fire subagents simultaneously:
+
+```
+Turn 1: Fire Subagent A (research feature X) + Subagent B (research feature Y)
+Turn 2: Collect both results, combine insights, implement
+```
+
+This cuts wall-clock time in half for research-heavy sessions.
+
+### 20.7 Subagent safety rules
+
+1. **Never pass secrets** in subagent prompts (they may be logged).
+2. **Always specify "Do NOT edit any files"** for research-only subagents — otherwise they may make unwanted changes.
+3. **Verify subagent output** — subagents can hallucinate just like any model. Cross-check file paths, line numbers, and code snippets.
+4. **Subagents are stateless** — they don't see the conversation history. Include all necessary context in the prompt.
+5. **Prefer read-only subagents** for research. Only use write-capable subagents when you explicitly want them to edit files.

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.21] - 2026-05-30
+
+### Added
+- **Subagent workflow documentation** (`AGENTS.md` §20) — comprehensive guidance on using subagents for parallel research, quality assurance, architecture validation, documentation updates, and cost optimization. Covers 5 subagent patterns (research, QA, parallel, documentation, design review), prompt-writing guidelines, cost optimization strategies, and safety rules.
+- **Subagent-first operating principle** (§8.7) — new principle: "Use subagents for leverage. Delegate research, QA review, documentation updates, and parallel exploration to subagents."
+- **Subagent integration into session workflow** (§17.7) — "Use subagents throughout. Delegate research, QA, documentation, and parallel exploration aggressively."
+
 ## [0.1.20] - 2026-05-30
 
 ### Added
