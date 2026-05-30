@@ -45,6 +45,7 @@ transcription:
   word_timestamps: true  # ALWAYS true for editor synchronization
   vad_filter: true  # Filter silence before transcription
   condition_on_previous_text: true  # Use context from previous segments
+  max_segment_duration: 15  # Max segment duration in seconds. Longer segments are split to reduce stuttering/repetition. Default 15s (was 30s, see #40).
   language: "no"  # Norwegian
   
   # Confidence thresholds — AGGRESSIVE for maximum flagging without ground truth

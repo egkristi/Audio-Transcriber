@@ -383,6 +383,85 @@ class Transcriber:
         return segments
 
 
+def _split_long_segments(
+    segments: List[TranscriptionSegment],
+    max_duration: float = 15.0,
+) -> List[TranscriptionSegment]:
+    """
+    Split segments that exceed max_duration into smaller chunks.
+    
+    Long segments (30s+) cause Whisper to stutter/repeat phrases in conversational
+    speech with pauses. Splitting them at sentence boundaries or mid-point reduces
+    stuttering and improves alignment accuracy (#40).
+    
+    Args:
+        segments: List of transcription segments
+        max_duration: Maximum segment duration in seconds (default 15s)
+        
+    Returns:
+        List of segments, with long ones split into smaller pieces
+    """
+    if max_duration <= 0:
+        return segments
+    
+    split_segments = []
+    for seg in segments:
+        duration = seg.end - seg.start
+        if duration <= max_duration:
+            split_segments.append(seg)
+            continue
+        
+        # Split long segment into chunks of max_duration
+        num_chunks = int(np.ceil(duration / max_duration))
+        chunk_duration = duration / num_chunks
+        
+        for i in range(num_chunks):
+            chunk_start = seg.start + i * chunk_duration
+            chunk_end = min(seg.start + (i + 1) * chunk_duration, seg.end)
+            
+            # Split words if available
+            chunk_words = None
+            if seg.words:
+                chunk_words = [
+                    w for w in seg.words
+                    if w.get("start", 0) >= chunk_start and w.get("end", 0) <= chunk_end
+                ]
+            
+            # Estimate chunk text from word-level data, or use full text
+            chunk_text = seg.text
+            if chunk_words:
+                chunk_text = " ".join(w.get("word", "") for w in chunk_words).strip()
+            
+            new_seg = TranscriptionSegment(
+                id=len(split_segments),
+                start=chunk_start,
+                end=chunk_end,
+                text=chunk_text,
+                speaker=seg.speaker,
+                words=chunk_words,
+                confidence=seg.confidence,
+                avg_logprob=seg.avg_logprob,
+                no_speech_prob=seg.no_speech_prob,
+                compression_ratio=seg.compression_ratio,
+                temperature=seg.temperature,
+                confidence_level=seg.confidence_level,
+            )
+            split_segments.append(new_seg)
+        
+        logger.debug(
+            f"Split segment [{seg.start:.1f}-{seg.end:.1f}]s "
+            f"({duration:.0f}s) into {num_chunks} chunks"
+        )
+    
+    if len(split_segments) != len(segments):
+        logger.info(
+            f"Segment splitting: {len(segments)} → {len(split_segments)} segments "
+            f"(max_duration={max_duration}s)"
+        )
+    
+    return split_segments
+
+
 def transcribe_audio(
     file_path: Path,
     model_name: str = "NbAiLab/nb-whisper-large-verbatim",
@@ -428,6 +507,10 @@ def transcribe_audio(
         language=language,
         word_timestamps=word_timestamps,
     )
+    
+    # Split long segments to reduce stuttering/repetition (#40)
+    max_segment_duration = config.get("max_segment_duration", 15.0)
+    segments = _split_long_segments(segments, max_duration=max_segment_duration)
     
     # Align with diarization if available
     if diarization_timeline:
