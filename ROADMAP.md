@@ -159,6 +159,46 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 
 ## Test run findings (2026-05-30)
 
+### Fasit evaluation — M1 baseline (27 min call recording)
+
+First-ever WER measurement against a real ground-truth transcript. Pipeline run with `--dialect northern_norwegian` on `Call recording Håvard Kristiansen_260524_172503.m4a` (27 min, 48kHz AAC).
+
+#### WER results
+
+| Metric | Value |
+|--------|-------|
+| **WER** | **63.67%** |
+| CER | 52.13% |
+| MER | 58.13% |
+| WIL | 70.67% |
+| WIP | 29.33% |
+| Reference words | 2,640 |
+| Hypothesis words | 1,894 |
+| Hits (correct) | 1,211 |
+| Substitutions | 431 |
+| Deletions | 998 |
+| Insertions | 252 |
+
+#### Error analysis
+
+1. **Deletions dominate (998/2,640 = 37.8%):** The model misses entire phrases. This is the single biggest problem. Likely causes: (a) 30-second segments are too long for conversational speech with pauses — the model fills silence with stuttering/repetition instead of advancing; (b) the model struggles with crosstalk and overlapping speech common in phone calls.
+
+2. **Dialect normalization is systematic:** The fasit uses dialect forms extensively (`æ`, `kor`, `e`, `nu`, `ikkje`, `møkker`, `naboan`, `potetlanding`). The hypothesis converts nearly all of these to Bokmål (`jeg`, `hvor`, `er`, `nå`, `ikke`). The dialect vocabulary prompt (118 words) is not strong enough to override Whisper's Bokmål bias.
+
+3. **Stuttering/repetition in long segments:** Segment 1 (30s) contains "hallo"×7 and "god dag"×3. Segment 9 (30s) contains "det samsvarte med"×8. This pattern suggests the model runs out of audio content within a long segment and loops on what it heard.
+
+4. **Names and numbers are poorly recognized:** "Markus" → missing, "Vilde Elise" → missing, "Knut" → missing, "19" → missing, "17" → missing, "WhatsApp" → missing. These are high-value errors for a transcription tool.
+
+5. **Alignment model still broken:** Only 10/55 segments have word-level scores from `nb-wav2vec2-1b-bokmaal-v2`. This means word-level confidence signals are unavailable for 82% of segments.
+
+6. **Transcription speed:** ~17 min for 27 min audio on Mac M1 (~1:1.6 ratio, faster than the earlier ~1:3 estimate). CPU usage was 100–400% (multi-core).
+
+#### Implications
+
+The 63.67% WER is far above the 15–25% range estimated before the fasit existed. This means the model is **not usable for unattended transcription** — every output needs full human review and correction. The confidence system's 100% flag rate was correct: every segment genuinely needs review.
+
+The single highest-ROI fix is **shorter segments** — the current 30-second VAD-based segmentation produces segments that are too long for conversational speech, causing stuttering and missed content. A maximum segment duration of 10–15 seconds would likely reduce both deletions and insertions significantly.
+
 ### Single-file test (142s)
 
 Real pipeline execution on `testdata/Call recording Elida Anna Wiktoria Kristiansen_251023_190409.m4a` (142s, 48kHz AAC) with `--dialect northern_norwegian` revealed:
@@ -231,27 +271,36 @@ These milestones are based on the empirical baseline (mean confidence 0.447, 100
 - **Status:** 10-file stratified sample run complete. Confidence system works but is uncalibrated. Every segment needs human review.
 - **Gate for next:** Create fasit for at least 3 files from the test sample (short, medium, long).
 
-### M1 — Calibrated confidence + fasit baseline
+### M1 — Calibrated confidence + fasit baseline ✅ (2026-05-30)
 - **Target confidence:** 0.50 mean (calibrated)
-- **Target WER:** Measure baseline (likely 15–25% WER for call recordings)
-- **What it takes:**
-  - Manually transcribe 3 files from the test sample (short ~5s, medium ~90s, long ~460s) → create ground-truth fasit
-  - Run `jiwer` to establish actual WER baseline
-  - Calibrate confidence scores: fit a logistic regression on `priority_score` → probability-of-error, using fasit as labels
-  - Fix alignment model: investigate why `nb-wav2vec2-1b-bokmaal-v2` returns 0 word-level scores for all files
-- **Estimated effort:** 2–4 hours (manual transcription + calibration code)
-- **Gate for next:** WER baseline known; confidence scores correlate with actual errors
+- **Target WER:** Measure baseline
+- **Actual WER:** **63.67%** (CER: 52.13%) on 27 min call recording (2,640 reference words)
+- **What it took:**
+  - User created fasit (`testdata/fasit1/`) with timestamps and dialect forms ✅
+  - Cleaned fasit for evaluation (`fasit_clean.txt`) ✅
+  - Ran pipeline with `--dialect northern_norwegian` on 27 min audio (~17 min CPU time on Mac M1) ✅
+  - Established WER baseline: **63.67%** (substitutions: 431, deletions: 998, insertions: 252, hits: 1,211) ✅
+  - Fixed `scripts/evaluate.py` — added `sys.path.insert(0, ...)` for standalone execution; fixed jiwer API usage ✅
+- **Key findings:**
+  - **WER is much higher than expected** (63.67% vs. estimated 15–25%). The model misses ~38% of words (998 deletions out of 2,640).
+  - **Dialect normalization is severe:** The model systematically converts dialect forms to Bokmål (`æ`→`jeg`, `kor`→`hvor`, `e`→`er`, `nu`→`nå`) despite the dialect vocabulary prompt.
+  - **Stuttering/repetition:** The model produces repeated phrases (e.g., "hallo"×7, "det samsvarte med"×8) — likely from long 30-second segments causing the model to loop.
+  - **Long segments hurt accuracy:** 30-second segments are too long for conversational speech with pauses. Shorter segments would reduce stuttering and improve alignment.
+  - **Alignment model still broken:** Only 10/55 segments have word-level scores from `nb-wav2vec2-1b-bokmaal-v2`.
+  - **Hypothesis is 28% shorter than reference** (1,894 vs. 2,640 words) — the model misses entire phrases, especially names, numbers, and dialect content.
+- **Gate for next:** WER baseline known (63.67%). Next priority: reduce WER through shorter segments, better dialect handling, and prompt optimization.
 
 ### M2 — Dialect-aware confidence + vocabulary expansion ✅ (2026-05-30)
 - **Target confidence:** 0.55 mean (calibrated)
 - **Target WER:** 10–15% (halve the baseline)
-- **What it takes:**
+- **What it took:**
   - Expand dialect vocabulary from 34 → 100+ Northern Norwegian words ✅ (118 words)
   - Add dialect confidence scoring: flag segments where Whisper outputs standard forms but dialect expected ✅
   - Implement `--preserve-dialect` flag to prevent silent normalization ✅
   - Add dialect region auto-detection from transcribed text ✅ (5 dialects)
   - Fix model caching across files (load WhisperX model once per run, not per file) — reduces batch runtime by ~5× ✅ (done in v0.1.15)
 - **Estimated effort:** 8–16 hours
+- **Actual WER after M2:** 63.67% — dialect vocabulary injection alone is insufficient. The model still normalizes dialect to Bokmål despite the prompt.
 - **Gate for next:** WER < 15% on the fasit set; dialect words recognized correctly
 
 ### M3 — Prompt engineering + domain vocabulary

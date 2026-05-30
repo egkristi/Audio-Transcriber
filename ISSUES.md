@@ -310,3 +310,66 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 ## Open
 
 - **#8** — `editor.py` web editor (parked; Subtitle Edit covers the need)
+
+### #39 — WER baseline 63.67% — model unusable for unattended transcription
+- **File:** `scripts/run_pipeline.py`, `src/transcribe.py`
+- **Status:** Open
+- **Priority:** Critical
+- **Description:** First WER measurement against real fasit (27 min call recording) shows **63.67% WER** (CER: 52.13%). The model misses 37.8% of words (998 deletions out of 2,640 reference words). Every segment needs human review. The model is not usable for unattended transcription.
+- **Root causes identified:**
+  1. **30-second segments too long** — conversational speech with pauses causes the model to stutter/repeat phrases instead of advancing. Segments 1 and 9 show clear stuttering patterns ("hallo"×7, "det samsvarte med"×8).
+  2. **Dialect normalization** — the model systematically converts Northern Norwegian dialect to Bokmål despite the 118-word dialect vocabulary prompt.
+  3. **Names and numbers poorly recognized** — "Markus", "Vilde Elise", "Knut", "19", "17", "WhatsApp" all deleted or substituted.
+  4. **Alignment model broken** — only 10/55 segments have word-level scores from `nb-wav2vec2-1b-bokmaal-v2`.
+- **Suggested fixes:**
+  1. Reduce maximum segment duration from 30s to 10-15s in VAD configuration.
+  2. Investigate why dialect vocabulary prompt doesn't override Bokmål bias — possibly the prompt format or token budget is wrong.
+  3. Fix alignment model to get word-level scores for all segments.
+  4. Add post-processing to detect and remove stuttering/repetition.
+- **Discovered during:** M1 fasit evaluation (2026-05-30).
+
+### #40 — Stuttering/repetition in long VAD segments
+- **File:** `src/preprocess.py`, `config.yaml`
+- **Status:** Open
+- **Priority:** High
+- **Description:** The pipeline produces 30-second VAD segments that are too long for conversational speech. When there are pauses within a segment, the model fills the silence by repeating what it already heard. Examples from the fasit run: Segment 1 has "hallo"×7 and "god dag"×3; Segment 9 has "det samsvarte med"×8.
+- **Impact:** Inflates WER through insertions (252 insertions in the fasit run). Makes output harder to read and edit.
+- **Suggested fix:** Reduce `max_segment_duration` in VAD configuration from 30s to 10-15s. This will produce more segments but each will be tighter and less prone to stuttering.
+- **Discovered during:** M1 fasit evaluation (2026-05-30).
+
+### #41 — Dialect vocabulary prompt insufficient to override Bokmål bias
+- **File:** `src/vocabulary.py`, `src/transcribe.py`
+- **Status:** Open
+- **Priority:** High
+- **Description:** Despite injecting 118 Northern Norwegian dialect words into the `initial_prompt`, the model systematically converts dialect forms to Bokmål in the output. The fasit uses `æ`, `kor`, `e`, `nu`, `ikkje`, `møkker`, `naboan`, `potetlanding` extensively, but the hypothesis uses `jeg`, `hvor`, `er`, `nå`, `ikke` for nearly all occurrences.
+- **Impact:** The dialect vocabulary feature (Phase 8, M2) is not effective. The model's Bokmål training bias overrides the prompt.
+- **Suggested investigations:**
+  1. Check if the prompt is actually being passed correctly to the model (verify in logs).
+  2. Test with a stronger prompt format (e.g., example sentences instead of word lists).
+  3. Test with `condition_on_previous_text=True` to see if dialect forms in earlier segments influence later ones.
+  4. Consider whether `hotwords` or `suppress_blank` in faster-whisper could boost dialect token probabilities.
+- **Discovered during:** M1 fasit evaluation (2026-05-30).
+
+### #42 — Alignment model returns word-level scores for only 18% of segments
+- **File:** `src/transcribe.py`
+- **Status:** Open
+- **Priority:** Medium
+- **Description:** The `_align_with_whisperx()` fallback using `NbAiLab/nb-wav2vec2-1b-bokmaal-v2` returns word-level scores for only 10/55 segments (18%). This means word-level confidence signals (`alignment_score`, `min_word_alignment_score`) are unavailable for 82% of segments, removing a key signal from confidence scoring.
+- **Impact:** Confidence scoring lacks acoustic alignment data. The confidence system relies on decoder signals and hard-rules only.
+- **Suggested investigations:**
+  1. Check if the wav2vec2 model expects a specific sample rate or audio format.
+  2. Test with a different alignment model (e.g., `NbAiLab/nb-wav2vec2-300m-bokmaal`).
+  3. Check if the alignment model works better with shorter segments.
+- **Discovered during:** 10-file stratified sample test and M1 fasit evaluation (2026-05-30).
+
+### #43 — Names and numbers systematically deleted or substituted
+- **File:** `src/transcribe.py`
+- **Status:** Open
+- **Priority:** Medium
+- **Description:** The model consistently fails to recognize names and numbers. In the fasit run: "Markus" → deleted, "Vilde Elise" → deleted, "Knut" → deleted, "19" → deleted, "17" → deleted, "WhatsApp" → deleted, "25" → "53" (substituted). These are high-value errors for a transcription tool.
+- **Impact:** The most important content (who said what, when, to whom) is lost.
+- **Suggested fixes:**
+  1. Add proper noun boosting via `hotwords` in faster-whisper.
+  2. Build a domain-specific name list for the call context.
+  3. Add post-processing to flag missing numbers/names for review.
+- **Discovered during:** M1 fasit evaluation (2026-05-30).

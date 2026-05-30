@@ -22,6 +22,9 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+# Add parent directory to path to import src modules
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from src.utils import get_logger, save_json
 
 logger = get_logger("evaluate")
@@ -128,10 +131,10 @@ def evaluate(
 
     # Detailed alignment
     alignment = jiwer.process_words(ref_norm, hyp_norm)
-    substitutions = len(alignment.substitutions)
-    deletions = len(alignment.deletions)
-    insertions = len(alignment.insertions)
-    hits = len(alignment.hits)
+    substitutions = alignment.substitutions
+    deletions = alignment.deletions
+    insertions = alignment.insertions
+    hits = alignment.hits
 
     results = {
         "reference_file": str(reference_path),

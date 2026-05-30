@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.20] - 2026-05-30
+
+### Added
+- **First WER baseline (M1 milestone)** — evaluated nb-whisper-large-verbatim against real fasit (27 min call recording, 2,640 reference words). Baseline WER: 63.67% (CER: 52.13%).
+- **WER evaluation harness** (`scripts/evaluate.py`) — computes WER, CER, MER, WIL, WIP with detailed error breakdown (substitutions/deletions/insertions/hits). Supports SRT, JSON, and plain text hypothesis formats.
+- **Fasit ground-truth transcript** (`testdata/fasit1/`) — user-created manual transcript with timestamps and dialect forms. Cleaned version (`fasit_clean.txt`) for automated evaluation.
+
+### Fixed
+- **`scripts/evaluate.py`** — added `sys.path.insert(0, ...)` for standalone execution. Fixed jiwer API usage (substitutions/deletions/insertions/hits are `int`, not list).
+
 ## [0.1.19] - 2026-05-30
 
 ### Added
