@@ -157,6 +157,8 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 
 ## Test run findings (2026-05-30)
 
+### Single-file test (142s)
+
 Real pipeline execution on `testdata/Call recording Elida Anna Wiktoria Kristiansen_251023_190409.m4a` (142s, 48kHz AAC) with `--dialect northern_norwegian` revealed:
 
 1. **Confidence hard-rules working:** 5 segments processed, all flagged. Segment with `repeated_words` + `repeated_phrases` + `possible_proper_noun` correctly ranked highest (0.517). Segments with only `low_logprob` ranked lower (0.372-0.500).
@@ -165,6 +167,138 @@ Real pipeline execution on `testdata/Call recording Elida Anna Wiktoria Kristian
 4. **Language detection:** Confidence 0.47 for Norwegian — correctly fell back to "no" (Norwegian).
 5. **Word-level alignment unavailable:** `'FasterWhisperPipeline' object has no attribute 'align'` — non-fatal warning, alignment scores not available for confidence extraction.
 6. **Transcription speed:** ~40s for 142s audio on CPU (Mac M1). Expected.
+
+### 10-file stratified sample test (2026-05-30)
+
+A stratified sample of 10 files (0.0MB–63.6MB, total 107MB) was selected from 410 testdata files and run through the full pipeline (`--no-diarize --dialect northern_norwegian --workers 1`). Total runtime: ~88 minutes (all CPU on Mac M1).
+
+#### Per-file confidence results
+
+| File | Confidence | Segments | Flagged | Duration |
+|------|-----------|----------|---------|----------|
+| Elida Anna Wiktoria Kristiansen_260308_141037 | **0.285** | 3 | 3 | ~20s |
+| Elida Anna Wiktoria Kristiansen_251106_143751 | **0.324** | 6 | 5 | ~197s |
+| Håvard Kristiansen_251105_233919 | **0.377** | 1 | 1 | ~2s |
+| Elida Anna Wiktoria Kristiansen_251202_164323 | **0.436** | 7 | 6 | ~90s |
+| Elida Anna Wiktoria Kristiansen_251109_202730 | **0.476** | 16 | 16 | ~300s |
+| Elida Anna Wiktoria Kristiansen_251027_212844 | **0.491** | 16 | 16 | ~460s |
+| Elida Anna Wiktoria Kristiansen_251121_114236 | **0.504** | 41 | 39 | ~180s |
+| Elida Anna Wiktoria Kristiansen_260209_202520 | **0.506** | 1 | 1 | ~5s |
+| Elida Anna Wiktoria Kristiansen_260308_141214 | **0.531** | 1 | 1 | ~20s |
+| Elida Anna Wiktoria Kristiansen_251217_200931 | **0.540** | 129 | 121 | ~600s |
+
+#### Aggregate statistics
+
+| Metric | Value |
+|--------|-------|
+| **Mean confidence** | **0.447** |
+| Median confidence | 0.491 |
+| Min confidence | 0.285 |
+| Max confidence | 0.540 |
+| Std dev | 0.085 |
+| Files < 0.5 confidence | 6/10 (60%) |
+| Files < 0.4 confidence | 3/10 (30%) |
+| Files < 0.3 confidence | 1/10 (10%) |
+
+#### Key findings
+
+1. **Confidence is uncalibrated and pessimistic:** The geometric mean of decoder signals produces scores in the 0.28–0.54 range. Every single segment in every file was flagged for review. This means the current 0.7 threshold is useless — **everything** is below it. The confidence system needs calibration against ground truth before it can meaningfully distinguish "needs review" from "probably correct."
+
+2. **No correlation with audio quality:** The lowest-confidence file (0.285, 3 segments) and highest (0.540, 129 segments) are both call recordings of the same person. File size/duration does not predict confidence.
+
+3. **100% flag rate is a problem:** If every segment is flagged, the review list is useless as a prioritization tool. The priority scoring (0.33–1.0 range) provides some ranking, but without a fasit we cannot tell whether the ranking correlates with actual errors.
+
+4. **Alignment scores are always null:** The wav2vec2 alignment model (`NbAiLab/nb-wav2vec2-1b-bokmaal-v2`) returns 0 segments with word-level scores for every file. This means `alignment_score` and `min_word_alignment_score` are always `null` in the confidence signals, removing a key signal from the geometric mean.
+
+5. **Transcription speed:** ~1:3 ratio (1 second audio = ~3 seconds CPU time) for the large model on Mac M1. The 63.6MB file (129 segments, ~600s audio) took ~56 minutes alone.
+
+#### Implications for milestones
+
+The empirical confidence baseline (mean 0.447) is far below the 0.70+ range that would indicate "good enough for most purposes." However, **confidence is not WER** — it is a proxy signal from the decoder. The real accuracy metric requires a fasit (ground-truth transcript). Until a fasit exists, the confidence score is useful only as a relative ranking tool within a single file, not as an absolute quality gate.
+
+**Critical insight:** 2% WER (98% accuracy) = ~1 error per 50 words. This is the gold standard for production ASR and typically requires a fine-tuned, domain-specific model trained on hours of transcribed data. The current off-the-shelf `nb-whisper-large-verbatim` model, even with dialect vocabulary injection, is unlikely to achieve this without fine-tuning on Norwegian call recordings.
+
+## Milestones toward 98% confidence / 2% WER
+
+These milestones are based on the empirical baseline (mean confidence 0.447, 100% flag rate) and the realistic trajectory from off-the-shelf Whisper to a fine-tuned production system. Each milestone is gated on a fasit (ground-truth transcript) for WER measurement.
+
+### M0 — Baseline established ✅ (2026-05-30)
+- **Confidence:** 0.447 mean (uncalibrated)
+- **Flag rate:** 100% of segments flagged
+- **WER:** Unknown (no fasit)
+- **Status:** 10-file stratified sample run complete. Confidence system works but is uncalibrated. Every segment needs human review.
+- **Gate for next:** Create fasit for at least 3 files from the test sample (short, medium, long).
+
+### M1 — Calibrated confidence + fasit baseline
+- **Target confidence:** 0.50 mean (calibrated)
+- **Target WER:** Measure baseline (likely 15–25% WER for call recordings)
+- **What it takes:**
+  - Manually transcribe 3 files from the test sample (short ~5s, medium ~90s, long ~460s) → create ground-truth fasit
+  - Run `jiwer` to establish actual WER baseline
+  - Calibrate confidence scores: fit a logistic regression on `priority_score` → probability-of-error, using fasit as labels
+  - Fix alignment model: investigate why `nb-wav2vec2-1b-bokmaal-v2` returns 0 word-level scores for all files
+- **Estimated effort:** 2–4 hours (manual transcription + calibration code)
+- **Gate for next:** WER baseline known; confidence scores correlate with actual errors
+
+### M2 — Dialect-aware confidence + vocabulary expansion
+- **Target confidence:** 0.55 mean (calibrated)
+- **Target WER:** 10–15% (halve the baseline)
+- **What it takes:**
+  - Expand dialect vocabulary from 34 → 100+ Northern Norwegian words
+  - Add dialect confidence scoring: flag segments where Whisper outputs standard forms but dialect expected
+  - Implement `--preserve-dialect` flag to prevent silent normalization
+  - Add dialect region auto-detection from transcribed text
+  - Fix model caching across files (load WhisperX model once per run, not per file) — reduces batch runtime by ~5×
+- **Estimated effort:** 8–16 hours
+- **Gate for next:** WER < 15% on the fasit set; dialect words recognized correctly
+
+### M3 — Prompt engineering + domain vocabulary
+- **Target confidence:** 0.60 mean (calibrated)
+- **Target WER:** 5–10%
+- **What it takes:**
+  - Build domain-specific vocabulary (telephony, healthcare, customer service)
+  - Optimize `initial_prompt` construction: test different prompt formats, word orderings, and token budgets
+  - Add `--num-speakers 2` convenience flag for telephone calls
+  - Implement stereo channel splitting for one-speaker-per-channel recordings
+  - Run on full 410-file testdata set for comprehensive statistics
+- **Estimated effort:** 16–24 hours
+- **Gate for next:** WER < 10% on the fasit set; domain terms recognized
+
+### M4 — Fine-tuned model (LoRA)
+- **Target confidence:** 0.75 mean (calibrated)
+- **Target WER:** 2–5%
+- **What it takes:**
+  - Collect 30+ minutes of transcribed Norwegian call audio (from corrected pipeline output)
+  - Fine-tune `nb-whisper-large-verbatim` using LoRA on this corpus
+  - Compare WER before/after fine-tuning on the fasit set
+  - If successful, integrate LoRA weights as an optional pipeline component
+- **Estimated effort:** 40–80 hours (data collection + training + evaluation)
+- **Gate for next:** WER < 5% on the fasit set; fine-tuned model beats base model
+
+### M5 — Production-ready (98% accuracy / 2% WER)
+- **Target confidence:** 0.85+ mean (calibrated)
+- **Target WER:** ≤2% (~1 error per 50 words)
+- **What it takes:**
+  - Large-scale fine-tuning: 100+ hours of domain-specific transcribed audio
+  - Multi-dialect support (Trøndersk, Vestlandsk, Sørlandsk, Østlandsk)
+  - Cross-model ensemble or self-training / pseudo-labeling
+  - Comprehensive evaluation on held-out test set
+  - Confidence calibration validated against large fasit
+- **Estimated effort:** 200+ hours (data collection + training cycles + evaluation)
+- **Reality check:** This is the gold standard for production ASR. It may not be achievable without a team, dedicated GPU budget, and extensive domain data collection. For a personal tool, M3 (5–10% WER) is a more realistic long-term target.
+
+### Summary
+
+| Milestone | Confidence | WER target | Effort | Key dependency |
+|-----------|-----------|------------|--------|----------------|
+| **M0** ✅ | 0.447 | Unknown | Done | — |
+| **M1** | 0.50 | 15–25% (baseline) | 2–4h | Fasit creation |
+| **M2** | 0.55 | 10–15% | 8–16h | Dialect expansion |
+| **M3** | 0.60 | 5–10% | 16–24h | Domain vocabulary |
+| **M4** | 0.75 | 2–5% | 40–80h | Training data |
+| **M5** | 0.85+ | ≤2% | 200h+ | Large corpus + GPU |
+
+**Bottom line:** The current system produces usable transcripts but every segment needs human review. The fastest path to measurable improvement is M1 (create a fasit and measure actual WER). Without a fasit, all confidence scores are guesses.
 
 ## Test run findings (2026-05-29)
 
@@ -220,19 +354,12 @@ Real pipeline execution on `testdata/Call recording Elida Anna Wiktoria Kristian
 
 ## Near-term priorities (revidert 2026-05-30)
 
-1. **Dialektgjenkjenning (PRIORITET #1)** — Se Phase 8. Umiddelbare steg:
-   - Dialekt-konfidensskåring i `confidence.py`
-   - `--preserve-dialect` CLI-flagg
-   - Utvid dialektvokabular til 100+ ord
-   - Auto-deteksjon av dialektregion
-2. **Ground-truth + WER-harness** (`jiwer`). Transkriber 5–10 minutter manuelt → fasit. Mål WER før alle andre endringer. ✅ `scripts/evaluate.py` på plass.
-3. **Issue #1** — koble konfig-parametrene til WhisperX-kallet. ✅ Løst.
-4. **Issue #2 (forbedret fiks)** — bruk `faster-whisper` sin innebygde språkdeteksjon i stedet for å laste en hel modell. ✅ Løst med modell-caching og 30s-klipp.
-5. **Issue #6 (vocabulary via `initial_prompt`)** — høyest ROI for nøyaktighet. ✅ Integrert.
-6. **Issue #3** — HF-auth-helper. ✅ Løst.
-7. **Issue #10 (device auto-detection)** — `cuda` for transkripsjon, `cuda`/`mps` for diarization. ✅ Løst.
-8. **Speaker diarization verification** — `src/diarize.py` er implementert med pyannote/speaker-diarization-3.1, og `src/transcribe.py` har `align_with_diarization()` som tildeler `SPEAKER_00`, `SPEAKER_01`, etc. til hvert segment. SRT/JSON/VTT-output inkluderer inline speaker labels. **Må verifiseres på ekte data** for å bekrefte at tildelingen er korrekt (spesielt ved kryssprat og overlap). CLI-støtte for `--min-speakers` / `--max-speakers` er ønskelig for å låse antall talere på 2 for telefonsamtaler.
-9. **Mål, mål, mål** — kjør WER mot fasiten for hver endring.
+See the **Milestones toward 98% confidence / 2% WER** section above for the structured roadmap. In priority order:
+
+1. **M1 — Calibrated confidence + fasit baseline** (2–4h). Create ground-truth transcripts for 3 files from the test sample. Measure actual WER. Calibrate confidence scores. This is the single highest-ROI action — without a fasit, all other accuracy work is blind.
+2. **M2 — Dialect-aware confidence + vocabulary expansion** (8–16h). Expand dialect vocabulary, add dialect confidence scoring, implement `--preserve-dialect`, fix model caching.
+3. **M3 — Prompt engineering + domain vocabulary** (16–24h). Build domain vocabulary, optimize prompts, run full 410-file test set.
+4. **Phase 9 engineering hardening** — fix ISSUES.md #31–#37 (editor step 6, config keys, model caching, version sync, normalization opt-in, privacy, diarize flag cleanup). These are cheap, high-confidence fixes that protect accuracy work.
 
 ### Utsettes / droppes (over-scope for personlig verktøy)
 - Web-editor (#8) — Subtitle Edit dekker behovet

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-05-30
+
+### Added
+- **Empirical confidence baseline from 10-file stratified test run** — ran full pipeline on stratified sample (0.0MB–63.6MB, total 107MB) from 410 testdata files. Mean confidence: 0.447. 100% segment flag rate. All alignment scores null (wav2vec2 returns 0 word-level scores). See ROADMAP.md for full results.
+- **Milestone-based roadmap toward 2% WER** — structured M0–M5 milestones with confidence targets, WER targets, effort estimates, and key dependencies. M0 (baseline) marked complete. M1 (fasit creation + calibration) is the immediate next step.
+
+### Changed
+- **ROADMAP.md** — replaced single-file test findings with comprehensive 10-file empirical data. Added "Milestones toward 98% confidence / 2% WER" section with calibrated targets based on real measurements. Updated near-term priorities to reference milestone structure.
+
 ## [0.1.13] - 2026-05-30
 
 ### Added
