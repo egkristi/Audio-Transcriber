@@ -71,13 +71,36 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 - [ ] Add API documentation / developer reference — **deferred until API stabilizes**
 - [x] **Word-level forced alignment** — nb-whisper-large-verbatim via faster-whisper lacks `align()`. Fixed with `_align_with_whisperx()` fallback using `NbAiLab/nb-wav2vec2-1b-bokmaal-v2`. Resolves ISSUES.md #30.
 
-### Phase 8: Dialect recognition & adaptation
-- [~] **Dialect-aware normalization** (`src/normalize.py`) — basic dialect word flagging implemented for Northern Norwegian (Nordland, Troms, Finnmark). Dialect words are flagged for awareness but NOT auto-corrected. See `NORWEGIAN_DIALECT_MAP`.
+### Phase 8: Dialect recognition & adaptation (PRIORITY FEATURE)
+
+> **Why this is a priority:** The target audio is Northern Norwegian (Nordland, Troms, Finnmark) with characteristic features that differ significantly from standard Eastern Norwegian. Whisper's nb-whisper-large-verbatim model was trained primarily on Bokmål and standard speech, causing systematic errors on dialect forms. Improving dialect recognition is the single highest-ROI accuracy improvement available without a fasit.
+
+#### Implemented
+- [x] **Dialect-aware normalization** (`src/normalize.py`) — `NORWEGIAN_DIALECT_MAP` with 30+ dialect words mapped to standard equivalents for flagging. Dialect words are flagged with `[dialect_word]` type but NOT auto-corrected — dialect is valid Norwegian.
 - [x] **Dialect-adaptive vocabulary** — `src/vocabulary.py` extended with `DIALECT_VOCABULARY` (30+ Northern Norwegian words across 6 categories: pronouns, negation, question words, adverbs, verbs, expressions). `load_vocabulary()` accepts `dialect="northern_norwegian"` parameter. Pipeline CLI has `--dialect northern_norwegian` flag. Dialect words are injected into Whisper's `initial_prompt` to improve recognition of non-standard forms.
-- [ ] **Dialect-specific language model** — evaluate whether fine-tuning or LoRA adapters on a Norwegian dialect corpus (e.g., Nordic Dialect Corpus, NB Whisper) improves WER for Northern Norwegian speech vs. the generic nb-whisper-large-verbatim model.
-- [ ] **Multi-dialect support** — extend dialect map to cover other Norwegian dialects (Trøndersk, Vestlandsk, Sørlandsk, Østlandsk) with region detection heuristics based on distinctive word patterns.
-- [ ] **Dialect confidence scoring** — add dialect-specific confidence signals: flag segments where Whisper outputs standard forms but dialect forms are expected, and vice versa. Prioritize these for review.
-- [ ] **Dialect-preserving output** — ensure that dialect features are preserved in SRT output and not silently normalized to Bokmål. The current approach (flag but don't correct) is the foundation; formalize as a configurable option (`--preserve-dialect`).
+- [x] **Northern Norwegian place names** — 50+ place names from Nordland, Troms, and Finnmark added to `NORWEGIAN_PROPER_NOUNS` in `normalize.py`.
+- [x] **Northern Norwegian question word detection** — dialect question words ("ka", "kæ", "kor", "korsn", "koffer") trigger `?` at segment end.
+
+#### Next up (immediate)
+- [ ] **Dialect confidence scoring** — add dialect-specific confidence signals to `confidence.py`: flag segments where Whisper outputs standard forms but dialect forms are expected (and vice versa). Prioritize these for review. This catches "confidently wrong" dialect normalization where Whisper silently converts dialect to standard.
+- [ ] **Dialect-preserving output** — ensure dialect features are preserved in SRT output and not silently normalized to Bokmål. Add `--preserve-dialect` CLI flag. The current approach (flag but don't correct) is the foundation; formalize as a configurable option.
+- [ ] **Dialect-aware language model prompt** — expand `DIALECT_VOCABULARY` with more domain-specific dialect words (telephony, customer service, healthcare vocabulary in dialect form). Currently 34 words; target 100+.
+- [ ] **Dialect region auto-detection** — analyze transcribed text for dialect markers and auto-select the appropriate dialect vocabulary, rather than requiring `--dialect northern_norwegian` to be passed manually.
+
+#### Medium-term
+- [ ] **Multi-dialect support** — extend dialect map to cover other Norwegian dialects:
+  - **Trøndersk:** "æ" (jeg), "dæm" (dem), "hainn" (han), "kæm" (hvem), "sånn" (sånn), "int" (ikke), "itt" (ikke)
+  - **Vestlandsk:** "eg" (jeg), "deg" (du), "ikkje" (ikke), "kva" (hva), "korleis" (hvordan), "kvi" (hvorfor)
+  - **Sørlandsk:** "æ" (jeg), "dæ" (deg), "kæm" (hvem), "kordan" (hvordan), "itte" (ikke)
+  - **Østlandsk:** "jæ" (jeg), "dæ" (deg), "sæ" (seg), "kæ" (hva), "sånn" (sånn)
+  - Region detection heuristics based on distinctive word patterns (e.g., "eg" → Vestlandsk, "dæm" → Trøndersk)
+- [ ] **Dialect-specific language model** — evaluate whether fine-tuning or LoRA adapters on a Norwegian dialect corpus (e.g., Nordic Dialect Corpus, NB Whisper) improves WER for Northern Norwegian speech vs. the generic nb-whisper-large-verbatim model. **Note:** This requires a fasit to measure before/after WER.
+- [ ] **Dialect-aware confidence calibration** — once fasit exists, measure whether dialect segments have systematically higher WER than standard segments. If so, apply a dialect penalty to confidence scores.
+
+#### Long-term / research
+- [ ] **Dialect corpus collection** — build a small corpus of transcribed Northern Norwegian speech for fine-tuning or evaluation. Even 30 minutes of transcribed dialect audio would be valuable.
+- [ ] **Dialect-to-standard alignment** — research whether a dialect normalization step (dialect → Bokmål) before transcription improves accuracy, or if dialect-preserving transcription is better. Current hypothesis: dialect-preserving is better because Whisper was trained on Bokmål and dialect normalization would add another error source.
+- [ ] **Fine-tuned dialect model** — if a dialect corpus exists, fine-tune nb-whisper-large-verbatim on Northern Norwegian speech using LoRA. Compare WER against the base model.
 
 ## Test run findings (2026-05-30)
 
@@ -135,23 +158,28 @@ Real pipeline execution on `testdata/Call recording Elida Anna Wiktoria Kristian
 - ✅ Issue #28 — run_pipeline.py numpy import (runtime NameError)
 - ✅ Issue #29 — diarize.py token parameter (pyannote.audio API compatibility)
 
-### Remaining (as of 2026-05-29)
+### Remaining (as of 2026-05-30)
 - **#8:** `editor.py` er fortsatt placeholder — korrekt parkert, Subtitle Edit dekker behovet
 - Ingen CI-pipeline — over-scope for personlig verktøy
-- **Dialektgjenkjenning:** Grunnleggende nordnorsk dialekt-flagg i `normalize.py` og dialekt-adaptiv vokabularinjeksjon i `vocabulary.py` (via `--dialect northern_norwegian`) er implementert. Gjenstående: finjustert modell for nordnorsk, multi-dialekt-støtte, dialekt-konfidensskåring, og dialekt-bevarende output.
+- **Dialektgjenkjenning (PRIORITET):** Se Phase 8 for detaljert oversikt. Grunnleggende nordnorsk støtte er implementert (dialekt-flagg i `normalize.py`, dialekt-adaptiv vokabularinjeksjon i `vocabulary.py` via `--dialect northern_norwegian`). Gjenstående: dialekt-konfidensskåring, dialekt-bevarende output, utvidet vokabular, auto-deteksjon av dialektregion, multi-dialekt-støtte, og finjustert modell.
 - **Spell-checking:** Featuren er deaktivert inntil en norsk ordbok lastes inn (ISSUES.md #21 er løst — honest failure — men selve funksjonaliteten krever fortsatt ekstern ordbok)
 - **HF gated repo access:** `pyannote/speaker-diarization-3.1` krever eksplisitt aksept på huggingface.co. Token validerer, men brukeren er ikke i autorisert liste. Bruk `--no-diarize` inntil tilgang er gitt.
 
-## Near-term priorities (revidert etter AUDIT.md §Strategisk gjennomgang)
+## Near-term priorities (revidert 2026-05-30)
 
-1. **Ground-truth + WER-harness** (`jiwer`). Transkriber 5–10 minutter manuelt → fasit. Mål WER før alle andre endringer. ✅ `scripts/evaluate.py` på plass.
-2. **Issue #1** — koble konfig-parametrene til WhisperX-kallet. ✅ Løst.
-3. **Issue #2 (forbedret fiks)** — bruk `faster-whisper` sin innebygde språkdeteksjon i stedet for å laste en hel modell. ✅ Løst med modell-caching og 30s-klipp.
-4. **Issue #6 (vocabulary via `initial_prompt`)** — høyest ROI for nøyaktighet. ✅ Integrert.
-5. **Issue #3** — HF-auth-helper. ✅ Løst.
-6. **Issue #10 (device auto-detection)** — `cuda` for transkripsjon, `cuda`/`mps` for diarization. ✅ Løst.
-7. **Speaker diarization verification** — `src/diarize.py` er implementert med pyannote/speaker-diarization-3.1, og `src/transcribe.py` har `align_with_diarization()` som tildeler `SPEAKER_00`, `SPEAKER_01`, etc. til hvert segment. SRT/JSON/VTT-output inkluderer inline speaker labels. **Må verifiseres på ekte data** for å bekrefte at tildelingen er korrekt (spesielt ved kryssprat og overlap). CLI-støtte for `--min-speakers` / `--max-speakers` er ønskelig for å låse antall talere på 2 for telefonsamtaler.
-8. **Mål, mål, mål** — kjør WER mot fasiten for hver endring.
+1. **Dialektgjenkjenning (PRIORITET #1)** — Se Phase 8. Umiddelbare steg:
+   - Dialekt-konfidensskåring i `confidence.py`
+   - `--preserve-dialect` CLI-flagg
+   - Utvid dialektvokabular til 100+ ord
+   - Auto-deteksjon av dialektregion
+2. **Ground-truth + WER-harness** (`jiwer`). Transkriber 5–10 minutter manuelt → fasit. Mål WER før alle andre endringer. ✅ `scripts/evaluate.py` på plass.
+3. **Issue #1** — koble konfig-parametrene til WhisperX-kallet. ✅ Løst.
+4. **Issue #2 (forbedret fiks)** — bruk `faster-whisper` sin innebygde språkdeteksjon i stedet for å laste en hel modell. ✅ Løst med modell-caching og 30s-klipp.
+5. **Issue #6 (vocabulary via `initial_prompt`)** — høyest ROI for nøyaktighet. ✅ Integrert.
+6. **Issue #3** — HF-auth-helper. ✅ Løst.
+7. **Issue #10 (device auto-detection)** — `cuda` for transkripsjon, `cuda`/`mps` for diarization. ✅ Løst.
+8. **Speaker diarization verification** — `src/diarize.py` er implementert med pyannote/speaker-diarization-3.1, og `src/transcribe.py` har `align_with_diarization()` som tildeler `SPEAKER_00`, `SPEAKER_01`, etc. til hvert segment. SRT/JSON/VTT-output inkluderer inline speaker labels. **Må verifiseres på ekte data** for å bekrefte at tildelingen er korrekt (spesielt ved kryssprat og overlap). CLI-støtte for `--min-speakers` / `--max-speakers` er ønskelig for å låse antall talere på 2 for telefonsamtaler.
+9. **Mål, mål, mål** — kjør WER mot fasiten for hver endring.
 
 ### Utsettes / droppes (over-scope for personlig verktøy)
 - Web-editor (#8) — Subtitle Edit dekker behovet
@@ -166,7 +194,7 @@ Real pipeline execution on `testdata/Call recording Elida Anna Wiktoria Kristian
 
 ## Future ideas
 
-- Fine-tune a Norwegian ASR model on domain-specific vocabulary
+- Fine-tune a Norwegian ASR model on domain-specific vocabulary (see Phase 8 for dialect fine-tuning roadmap)
 - Add REST API / local server wrapper around pipeline
 - Provide a web-based review editor with waveform and speaker labels
 - Containerize with Docker for reproducible deployments

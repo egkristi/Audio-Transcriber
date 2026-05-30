@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Word-level forced alignment fallback** (`src/transcribe.py`) — when `FasterWhisperPipeline` lacks an `align()` method (nb-whisper-large-verbatim model), the code now falls back to `whisperx.load_align_model()` + `whisperx.align()` with the Norwegian wav2vec2 model (`NbAiLab/nb-wav2vec2-1b-bokmaal-v2`). Alignment scores are merged into original segments, preserving decoder signals alongside acoustic confidence scores. Resolves ISSUES.md #30.
 
+### Changed
+- **ROADMAP.md** — elevated dialect recognition to priority feature (Phase 8). Restructured with clear tiers: implemented items, immediate next steps (dialect confidence scoring, preserve-dialect flag, expanded vocabulary, auto-detection), medium-term (multi-dialect support, dialect-specific LM), and long-term/research (corpus collection, fine-tuning). Updated near-term priorities to list dialect recognition as #1.
+
+### Added
+- **Word-level forced alignment fallback** (`src/transcribe.py`) — when `FasterWhisperPipeline` lacks an `align()` method (nb-whisper-large-verbatim model), the code now falls back to `whisperx.load_align_model()` + `whisperx.align()` with the Norwegian wav2vec2 model (`NbAiLab/nb-wav2vec2-1b-bokmaal-v2`). Alignment scores are merged into original segments, preserving decoder signals alongside acoustic confidence scores. Resolves ISSUES.md #30.
+
 ## [0.1.12] - 2026-05-29
 
 ### Changed

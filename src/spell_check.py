@@ -4,10 +4,18 @@ Spell-Checking Module
 Norwegian spell-checking using multiple strategies:
 - symspellpy for fast detection/correction
 - Transformers-based model for more accurate corrections (optional)
+
+Dictionary source: LibreOffice Norwegian Bokmål dictionary (nb_NO.dic)
+from https://github.com/LibreOffice/dictionaries. Downloaded on first use
+to a local cache directory. The dictionary is GPL v2 licensed and is NOT
+bundled with this package — it is fetched at runtime.
 """
 
 from typing import List, Tuple, Optional, Dict
+from pathlib import Path
 import re
+import urllib.request
+import os
 
 from .utils import get_logger
 
@@ -35,47 +43,101 @@ class NorwegianSpellChecker:
             self._init_transformer()
     
     def _init_symspell(self):
-        """Initialize SymSpell dictionary."""
+        """Initialize SymSpell dictionary.
+        
+        Downloads the LibreOffice Norwegian Bokmål dictionary on first use
+        to a local cache directory (~/.cache/audio-transcriber/).
+        The dictionary is GPL v2 licensed and is NOT bundled — it is fetched
+        at runtime from https://github.com/LibreOffice/dictionaries.
+        """
         try:
             from symspellpy import SymSpell, Verbosity
             
             logger.info("Initializing SymSpell dictionary for Norwegian")
             
-            # Download or use bundled dictionary
             self.symspell = SymSpell(max_dictionary_edit_distance=self.max_edits)
             
-            # CRITICAL: SymSpell requires a loaded dictionary to function.
-            # We do NOT bundle a Norwegian dictionary because:
-            # 1. Norwegian dictionaries (NST/UiB) have licensing restrictions
-            # 2. symspellpy's bundled dictionaries are English-only
-            # 3. A custom dictionary would need manual curation
-            #
-            # Without a dictionary, check_word() will treat ALL words as unknown
-            # and return false positives. Therefore: spell-checking is effectively
-            # DISABLED until a dictionary is provided.
-            #
-            # To enable: download a Norwegian word list and call:
-            #   self.symspell.load_dictionary("no_wordlist.txt", term_index=0, count_index=1)
-            #
-            # See ISSUES.md for details.
+            # Try to load Norwegian dictionary from cache or download it
+            dictionary_path = self._get_or_download_dictionary()
             
-            dictionary_loaded = False  # No dictionary bundled
-            
-            if not dictionary_loaded:
+            if dictionary_path and dictionary_path.exists():
+                # SymSpell expects term_index=0, count_index=1
+                # The .dic format has term on each line, no count column,
+                # so we use count_index=1 with a dummy count
+                self.symspell.load_dictionary(
+                    str(dictionary_path),
+                    term_index=0,
+                    count_index=1,
+                )
+                self.symspell_available = True
+                logger.info(f"SymSpell initialized with {dictionary_path.name}")
+            else:
                 logger.warning(
                     "No Norwegian dictionary loaded. Spell-checking is DISABLED. "
-                    "All words will be treated as unknown without a dictionary. "
-                    "Provide a word list or disable --spell-check."
+                    "Run with --download-dictionary to fetch the Norwegian word list, "
+                    "or manually place a dictionary file."
                 )
                 self.symspell_available = False
                 self.symspell = None
-            else:
-                self.symspell_available = True
-                logger.info("SymSpell initialized with dictionary")
             
         except ImportError:
             logger.warning("symspellpy not installed, spell-checking disabled")
             self.symspell_available = False
+    
+    def _get_or_download_dictionary(self) -> Optional[Path]:
+        """Get or download the Norwegian dictionary.
+        
+        Returns:
+            Path to the dictionary file, or None if unavailable.
+        """
+        cache_dir = Path.home() / ".cache" / "audio-transcriber"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        
+        dic_path = cache_dir / "nb_NO.dic"
+        
+        # Return cached dictionary if it exists
+        if dic_path.exists():
+            return dic_path
+        
+        # Try to download from LibreOffice dictionaries repository
+        url = "https://raw.githubusercontent.com/LibreOffice/dictionaries/master/no/nb_NO.dic"
+        logger.info(f"Downloading Norwegian dictionary from {url}")
+        
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                raw = resp.read()
+                # The .dic file uses ISO-8859-1 (latin-1) encoding
+                text = raw.decode("latin-1")
+                
+                # First line is the word count, rest are words
+                lines = text.splitlines()
+                if len(lines) > 1:
+                    # Strip affix annotations (e.g., "A-aksje/EG" -> "A-aksje")
+                    # and keep only the base word form
+                    words = []
+                    for line in lines[1:]:  # Skip count header
+                        word = line.strip()
+                        if word:
+                            # Remove affix annotations after '/'
+                            if "/" in word:
+                                word = word.split("/")[0]
+                            words.append(word)
+                    
+                    # Write in SymSpell format: word on each line
+                    with open(dic_path, "w", encoding="utf-8") as f:
+                        for w in words:
+                            f.write(f"{w} 1\n")  # count=1 for all words
+                    
+                    logger.info(f"Downloaded {len(words)} words to {dic_path}")
+                    return dic_path
+                else:
+                    logger.error("Downloaded dictionary file is empty or invalid")
+                    return None
+                    
+        except Exception as e:
+            logger.warning(f"Failed to download Norwegian dictionary: {e}")
+            return None
     
     def _init_transformer(self):
         """Initialize transformer-based spell checker."""
