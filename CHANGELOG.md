@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-05-30
+
+### Added
+- **Word-level forced alignment fallback** (`src/transcribe.py`) — when `FasterWhisperPipeline` lacks an `align()` method (nb-whisper-large-verbatim model), the code now falls back to `whisperx.load_align_model()` + `whisperx.align()` with the Norwegian wav2vec2 model (`NbAiLab/nb-wav2vec2-1b-bokmaal-v2`). Alignment scores are merged into original segments, preserving decoder signals alongside acoustic confidence scores. Resolves ISSUES.md #30.
+
 ## [0.1.12] - 2026-05-29
 
 ### Changed

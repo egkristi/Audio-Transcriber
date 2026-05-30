@@ -169,6 +169,86 @@ class Transcriber:
             logger.error(f"Failed to load transcription model: {e}")
             raise
     
+    def _align_with_whisperx(
+        self,
+        audio: np.ndarray,
+        segments: List[Dict],
+        language: str = "no",
+    ) -> Dict:
+        """
+        Fallback alignment using whisperx's standalone wav2vec2 alignment.
+        
+        FasterWhisperPipeline does not have an align() method, but whisperx
+        provides load_align_model() + align() that works with any transcription
+        output. This gives us word-level alignment scores for confidence extraction.
+        
+        Args:
+            audio: Audio array from whisperx.load_audio()
+            segments: List of segment dicts from transcription
+            language: Language code (e.g., "no" for Norwegian Bokmål)
+            
+        Returns:
+            Updated result dict with aligned word segments containing scores.
+        """
+        import whisperx
+        import torch
+        
+        # Determine device
+        if torch.cuda.is_available():
+            device = "cuda"
+        else:
+            device = "cpu"
+        
+        # Map language codes for alignment model lookup
+        # "no" (Norwegian Bokmål) and "nn" (Nynorsk) both have dedicated models
+        align_language = language
+        if language == "no":
+            align_language = "no"  # NbAiLab/nb-wav2vec2-1b-bokmaal-v2
+        elif language == "nn":
+            align_language = "nn"  # NbAiLab/nb-wav2vec2-1b-nynorsk
+        
+        logger.info(f"Loading alignment model for language: {align_language}")
+        align_model, align_metadata = whisperx.load_align_model(
+            language_code=align_language,
+            device=device,
+        )
+        
+        logger.debug("Running standalone alignment")
+        aligned_result = whisperx.align(
+            segments,
+            align_model,
+            align_metadata,
+            audio,
+            device,
+            return_char_alignments=False,
+        )
+        
+        # Merge alignment data back into the original segments.
+        # The aligned segments have word-level "score" fields (acoustic confidence),
+        # but may lack decoder signals (avg_logprob, no_speech_prob, etc.).
+        # We merge the alignment words into the original segments to preserve
+        # both decoder signals and alignment scores.
+        aligned_segments = aligned_result["segments"]
+        
+        # Build a lookup by start time for alignment segments
+        aligned_by_start = {}
+        for aligned_seg in aligned_segments:
+            key = round(aligned_seg.get("start", 0), 2)
+            aligned_by_start[key] = aligned_seg
+        
+        merged_segments = []
+        for orig_seg in segments:
+            merged = dict(orig_seg)
+            key = round(orig_seg.get("start", 0), 2)
+            aligned_seg = aligned_by_start.get(key)
+            if aligned_seg and "words" in aligned_seg:
+                # Add aligned words with scores to the original segment
+                merged["words"] = aligned_seg["words"]
+            merged_segments.append(merged)
+        
+        logger.info(f"Alignment complete: {sum(1 for s in merged_segments if s.get('words'))} segments have word-level scores")
+        return {"segments": merged_segments}
+    
     def transcribe(
         self,
         audio_path: Path,
@@ -211,6 +291,14 @@ class Transcriber:
                 try:
                     logger.debug("Running alignment for word-level timestamps")
                     result = self.model.align(audio, result["segments"], language)
+                except AttributeError:
+                    # FasterWhisperPipeline does not have an align() method.
+                    # Fall back to whisperx's standalone alignment with a wav2vec2 model.
+                    logger.info("Model has no align() method — using whisperx standalone alignment")
+                    try:
+                        result = self._align_with_whisperx(audio, result["segments"], language)
+                    except Exception as wx_align_err:
+                        logger.warning(f"WhisperX standalone alignment also failed: {wx_align_err}")
                 except Exception as align_err:
                     logger.warning(f"Word-level alignment failed: {align_err}")
             

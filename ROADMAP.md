@@ -69,7 +69,7 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 - [ ] Add troubleshooting guide — **add after collecting common failure modes from real runs**
 - [x] Add example workflows to README — batch and single-file examples present
 - [ ] Add API documentation / developer reference — **deferred until API stabilizes**
-- [ ] **Word-level forced alignment** — nb-whisper-large-verbatim via faster-whisper lacks `align()`. Consider using a separate wav2vec2 alignment model (e.g., `NbAiLab/nb-wav2vec2-1b-bokmaal`) for forced alignment after transcription, or switch to a WhisperX-compatible model for the alignment step only. Tracked as ISSUES.md #30.
+- [x] **Word-level forced alignment** — nb-whisper-large-verbatim via faster-whisper lacks `align()`. Fixed with `_align_with_whisperx()` fallback using `NbAiLab/nb-wav2vec2-1b-bokmaal-v2`. Resolves ISSUES.md #30.
 
 ### Phase 8: Dialect recognition & adaptation
 - [~] **Dialect-aware normalization** (`src/normalize.py`) — basic dialect word flagging implemented for Northern Norwegian (Nordland, Troms, Finnmark). Dialect words are flagged for awareness but NOT auto-corrected. See `NORWEGIAN_DIALECT_MAP`.
