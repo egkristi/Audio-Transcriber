@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.19] - 2026-05-30
+
+### Added
+- **Dialect vocabulary expansion (34→118 words)** (`src/vocabulary.py`) — expanded `DIALECT_VOCABULARY` from 34 to 118 Northern Norwegian words across 12 categories: pronouns, negation, questions, adverbs, verbs, expressions, time/quantity, prepositions, adjectives, telephony, people, and places. Covers telephony vocabulary ("telefon", "samtale", "beskjed"), family terms, and location words for better call transcription.
+- **Dialect confidence scoring** (`src/confidence.py`) — 2 new hard-rules (rules #23–#24) for dialect-aware prioritization:
+  - `dialect_normalized`: flags segments where standard Norwegian forms appear where dialect forms are expected (e.g., "jeg" instead of "æ", "ikke" instead of "ikkje"). Multiple matches get stronger boost (up to 0.6).
+  - `mixed_dialect_register`: flags segments containing both dialect and standard forms of the same concept (e.g., both "jeg" and "æ"), indicating Whisper confusion about dialect register.
+  - `dialect_present`: mild flag when dialect words are detected, for awareness.
+- **`--preserve-dialect` CLI flag** (`scripts/run_pipeline.py`, `src/normalize.py`) — new flag that prevents normalization from flagging dialect words as corrections. When used with `--normalize`, standard Norwegian is normalized while dialect forms are preserved intact. Dialect flagging (step 7b) is skipped entirely when `preserve_dialect=True`.
+- **Dialect region auto-detection** (`src/vocabulary.py`) — `CommonNorwegianVocabulary.detect_dialect()` analyzes transcribed text for distinctive dialect markers and returns the most likely region. Supports 5 Norwegian dialects: Northern Norwegian, Trøndersk, Vestlandsk, Sørlandsk, and Østlandsk. Each has weighted marker words for scoring. Returns `None` when no clear match.
+
+### Changed
+- **ROADMAP.md** — Phase 8 "Next up (immediate)" items marked as completed: dialect confidence scoring, dialect-preserving output, expanded vocabulary (100+), and dialect region auto-detection. Moved to medium-term section.
+
 ## [0.1.18] - 2026-05-30
 
 ### Added

@@ -96,6 +96,7 @@ class AudioTranscriberPipeline:
         dialect: Optional[str] = None,
         spell_check: bool = False,
         normalize: bool = False,
+        preserve_dialect: bool = False,
         min_speakers: Optional[int] = None,
         max_speakers: Optional[int] = None,
     ) -> Dict:
@@ -115,6 +116,9 @@ class AudioTranscriberPipeline:
             dialect: Dialect region for vocabulary injection
                      (e.g. "northern_norwegian")
             spell_check: Enable Norwegian spell-checking on output
+            normalize: Enable Norwegian text normalization
+            preserve_dialect: Preserve dialect forms in output (don't normalize
+                              dialect words to standard Norwegian)
             min_speakers: Minimum number of speakers for diarization
             max_speakers: Maximum number of speakers for diarization
             
@@ -303,7 +307,10 @@ class AudioTranscriberPipeline:
                             }
                             for s in primary_segments
                         ]
-                        normalized_segments, norm_corrections = normalize_transcription_segments(seg_dicts_for_norm)
+                        normalized_segments, norm_corrections = normalize_transcription_segments(
+                            seg_dicts_for_norm,
+                            preserve_dialect=preserve_dialect,
+                        )
                         
                         # Update primary_segments with normalized text
                         for i, seg in enumerate(primary_segments):
@@ -661,6 +668,14 @@ Examples:
         help="Enable Norwegian text normalization (punctuation, capitalization, stuttering removal). "
              "Off by default to preserve verbatim model output. Raw output saved as *_raw.srt when enabled."
     )
+    parser.add_argument(
+        "--preserve-dialect",
+        action="store_true",
+        default=False,
+        help="Preserve dialect forms in output. When enabled, dialect words are not flagged "
+             "as corrections during normalization. Use with --normalize to normalize standard "
+             "Norwegian while keeping dialect forms intact."
+    )
     
     # Logging
     parser.add_argument(
@@ -722,6 +737,7 @@ Examples:
             "dialect": args.dialect,
             "spell_check": args.spell_check,
             "normalize": args.normalize,
+            "preserve_dialect": args.preserve_dialect,
             "min_speakers": min_speakers,
             "max_speakers": max_speakers,
         }

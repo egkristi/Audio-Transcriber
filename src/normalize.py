@@ -386,6 +386,7 @@ def _capitalize_sentence(words: List[str]) -> List[str]:
 def normalize_norwegian_text(
     text: str,
     auto_correct: bool = False,
+    preserve_dialect: bool = False,
 ) -> Tuple[str, List[Dict]]:
     """
     Normalize Norwegian text and return corrections with explanations.
@@ -401,6 +402,8 @@ def normalize_norwegian_text(
         text: Raw transcription text
         auto_correct: If True, also apply character substitutions and
                       English word replacements (aggressive mode)
+        preserve_dialect: If True, dialect words are preserved and not
+                          flagged as corrections. Dialect is valid Norwegian.
         
     Returns:
         Tuple of (normalized_text, list_of_corrections)
@@ -471,17 +474,19 @@ def normalize_norwegian_text(
     
     # 7b. Flag dialect-standard mismatches (informational only)
     # Northern Norwegian dialect is valid — we flag but don't correct
-    for i, word in enumerate(word_list):
-        if word in NORWEGIAN_DIALECT_MAP:
-            standard = NORWEGIAN_DIALECT_MAP[word]
-            if word != standard:
-                corrections.append({
-                    "original": word,
-                    "corrected": standard,
-                    "position": i,
-                    "type": "dialect_word",
-                    "explanation": f"Dialektord '{word}' — standard '{standard}' (dialekt er OK, flagges kun for informasjon)"
-                })
+    # When preserve_dialect=True, skip dialect flagging entirely
+    if not preserve_dialect:
+        for i, word in enumerate(word_list):
+            if word in NORWEGIAN_DIALECT_MAP:
+                standard = NORWEGIAN_DIALECT_MAP[word]
+                if word != standard:
+                    corrections.append({
+                        "original": word,
+                        "corrected": standard,
+                        "position": i,
+                        "type": "dialect_word",
+                        "explanation": f"Dialektord '{word}' — standard '{standard}' (dialekt er OK, flagges kun for informasjon)"
+                    })
     
     # 8. Flag excessive repetition (across whole segment, not just consecutive)
     for word in set(word_list):
@@ -508,12 +513,16 @@ def normalize_norwegian_text(
     return normalized, corrections
 
 
-def normalize_transcription_segments(segments: List[Dict]) -> Tuple[List[Dict], List[Dict]]:
+def normalize_transcription_segments(
+    segments: List[Dict],
+    preserve_dialect: bool = False,
+) -> Tuple[List[Dict], List[Dict]]:
     """
     Normalize all segments in a transcription and collect all corrections.
     
     Args:
         segments: List of segment dicts with 'text' field
+        preserve_dialect: If True, dialect words are preserved and not flagged
         
     Returns:
         Tuple of (normalized_segments, all_corrections)
@@ -523,7 +532,7 @@ def normalize_transcription_segments(segments: List[Dict]) -> Tuple[List[Dict], 
     
     for seg in segments:
         text = seg.get("text", "")
-        normalized_text, corrections = normalize_norwegian_text(text)
+        normalized_text, corrections = normalize_norwegian_text(text, preserve_dialect=preserve_dialect)
         
         # Create normalized segment
         normalized_seg = dict(seg)

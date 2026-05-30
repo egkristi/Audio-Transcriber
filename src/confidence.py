@@ -27,6 +27,9 @@ Norwegian-specific hard-rules (v0.1.5+):
 - Character patterns: "aa" not "å", "ae" not "æ", "oe" not "ø" = normalization issue
 - Punctuation: missing spaces after punctuation = formatting error
 - Unusual characters: symbols, emojis, mixed scripts = corruption
+- Dialect-standard mismatch: standard forms where dialect expected = silent normalization
+- Mixed dialect register: both dialect and standard forms in same segment = confusion
+- Dialect presence: dialect words detected, flagged for awareness
 """
 
 from dataclasses import dataclass, field
@@ -414,6 +417,72 @@ class ConfidenceExtractor:
                 if not seg.text.startswith(('og ', 'men ', 'så ', 'ja ', 'nei ')):
                     scores.append(0.15)
                     flags.append("lowercase_start")
+            
+            # 23. HARD RULE: Dialect-standard mismatch detection
+            # Whisper may silently normalize Northern Norwegian dialect to standard
+            # Eastern Norwegian. These "confidently wrong" substitutions get high
+            # decoder confidence but are incorrect for the target dialect.
+            # Flag segments where standard forms appear but dialect expected.
+            # Dialect-standard pairs: (standard, dialect)
+            dialect_pairs = [
+                ("jeg", "æ"), ("meg", "mæ"), ("deg", "dæ"), ("seg", "sæ"),
+                ("dere", "dokker"), ("ikke", "ikkje"), ("hva", "ka"),
+                ("hvor", "kor"), ("hvordan", "korsn"), ("hvorfor", "koffer"),
+                ("bare", "bærre"), ("noe", "no"), ("noen", "nån"),
+                ("mye", "mykje"), ("hun", "ho"), ("være", "vær"),
+                ("gjør", "gjere"), ("kommer", "kjem"), ("går", "gjære"),
+                ("sier", "sei"), ("tror", "trur"), ("vet", "veit"),
+                ("får", "fær"), ("blir", "bli"), ("har", "harr"),
+                ("skal", "ska"), ("kan", "kann"), ("må", "må"),
+                ("vil", "vill"), ("nå", "no"), ("da", "då"),
+                ("opp", "oppi"), ("ned", "nedi"), ("inn", "inni"),
+                ("bort", "borti"), ("fram", "frami"),
+            ]
+            dialect_standard_count = 0
+            dialect_expected_forms = []
+            for standard, dialect in dialect_pairs:
+                # Check if standard form appears in text
+                if re.search(r'\b' + re.escape(standard) + r'\b', text_lower):
+                    dialect_standard_count += 1
+                    dialect_expected_forms.append(f"{standard}→{dialect}")
+            if dialect_standard_count >= 2:
+                # Multiple standard forms where dialect expected — likely normalization
+                boost = min(0.6, 0.15 * dialect_standard_count)
+                scores.append(boost)
+                flags.append(f"dialect_normalized:{','.join(dialect_expected_forms[:5])}")
+            elif dialect_standard_count == 1:
+                # Single instance — milder flag
+                scores.append(0.15)
+                flags.append(f"dialect_normalized:{','.join(dialect_expected_forms[:3])}")
+            
+            # 24. HARD RULE: Dialect form detection (mixed dialect-standard)
+            # If a segment contains BOTH dialect and standard forms of the same word,
+            # it indicates Whisper is confused about the dialect register.
+            dialect_words_set = {
+                "æ", "mæ", "dæ", "sæ", "dokker", "dåkker", "ikkje", "itte",
+                "ka", "kæ", "kor", "korsn", "kordan", "koffer", "koffor",
+                "bærre", "berre", "nån", "nåkkå", "nokka", "mykje",
+                "ho", "hu", "kje", "ska", "veit", "trur", "sei",
+                "no", "ille", "lita", "lite",
+            }
+            dialect_words_found = [w for w in word_list if w in dialect_words_set]
+            if dialect_words_found:
+                # Check for mixed register: dialect + standard of same concept
+                has_jeg = "jeg" in word_list
+                has_ikke = "ikke" in word_list
+                has_hva = "hva" in word_list
+                has_standard_pronoun = has_jeg or "meg" in word_list or "deg" in word_list
+                has_dialect_pronoun = "æ" in word_list or "mæ" in word_list or "dæ" in word_list
+                if has_standard_pronoun and has_dialect_pronoun:
+                    scores.append(0.35)
+                    flags.append("mixed_dialect_register")
+                if has_ikke and ("ikkje" in word_list or "itte" in word_list):
+                    scores.append(0.3)
+                    flags.append("mixed_negation")
+                # General dialect presence — mild flag for awareness
+                if len(dialect_words_found) >= 2:
+                    scores.append(0.1)
+                    flags.append(f"dialect_present:{','.join(dialect_words_found[:5])}")
             
             # Compute unweighted average priority
             if scores:

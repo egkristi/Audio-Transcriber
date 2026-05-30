@@ -282,20 +282,127 @@ class CommonNorwegianVocabulary:
     # Grouped by category for organized prompt generation.
     DIALECT_VOCABULARY = {
         "northern_norwegian": {
-            # First person pronouns
+            # First person pronouns (8 words)
             "pronouns": ["æ", "mæ", "dæ", "sæ", "dokker", "dåkker", "ho", "hu"],
-            # Negation
-            "negation": ["ikkje", "itte"],
-            # Question words
+            # Negation (3 words)
+            "negation": ["ikkje", "itte", "ikke"],
+            # Question words (7 words)
             "questions": ["ka", "kæ", "kor", "korsn", "kordan", "koffer", "koffor"],
-            # Adverbs and particles
-            "adverbs": ["bærre", "berre", "nån", "nåkkå", "nokka", "mykje"],
-            # Common verbs in dialect form
-            "verbs": ["e", "je", "ha", "kje", "ska", "være", "gjøre"],
-            # Common nouns / expressions
-            "expressions": ["no", "ille", "lita", "lite"],
+            # Adverbs and particles (12 words)
+            "adverbs": [
+                "bærre", "berre", "nån", "nåkkå", "nokka", "mykje",
+                "sånn", "slik", "nærmest", "akkurat", "kanskje", "kanke",
+            ],
+            # Common verbs in dialect form (14 words)
+            "verbs": [
+                "e", "je", "ha", "kje", "ska", "være", "gjøre",
+                "komme", "gå", "sei", "trur", "veit", "får", "bli",
+            ],
+            # Common nouns / expressions (8 words)
+            "expressions": ["no", "ille", "lita", "lite", "stor", "små", "godt", "mye"],
+            # Time and quantity (12 words)
+            "time_quantity": [
+                "nå", "da", "sida", "sist", "førr", "etter", "oppi",
+                "inni", "borti", "fram", "tilbake", "nedi",
+            ],
+            # Prepositions and conjunctions (10 words)
+            "prepositions": [
+                "oppå", "nedpå", "innpå", "bortpå", "frampå",
+                "oppi", "inni", "borti", "atti", "forran",
+            ],
+            # Adjectives and descriptors (12 words)
+            "adjectives": [
+                "fin", "stygg", "bra", "dårlig", "vanskelig", "lett",
+                "lang", "kort", "stor", "liten", "gammal", "ny",
+            ],
+            # Telephony / call vocabulary (12 words)
+            "telephony": [
+                "telefon", "mobil", "ring", "samtale", "beskjed",
+                "melding", "nummer", "svar", "ringte", "ringer",
+                "oppringt", "anrop",
+            ],
+            # Family and people (10 words)
+            "people": [
+                "mamma", "pappa", "bror", "søster", "bestefar",
+                "bestemor", "tante", "onkel", "venn", "nabo",
+            ],
+            # Places and locations (10 words)
+            "places": [
+                "hjemme", "borte", "skolen", "jobben", "butikken",
+                "sentrum", "byen", "landet", "sjukehus", "legevakt",
+            ],
         }
     }
+    
+    # Dialect region detection markers.
+    # Each dialect has distinctive words that identify it.
+    # Format: dialect_region -> {set of distinctive words, weight}
+    DIALECT_MARKERS = {
+        "northern_norwegian": {
+            "words": {"æ", "mæ", "dæ", "sæ", "dokker", "dåkker", "ikkje",
+                      "itte", "ka", "kæ", "kor", "korsn", "kordan", "koffer",
+                      "koffor", "bærre", "nåkkå", "nokka", "mykje", "ho",
+                      "hu", "kje", "no", "ille"},
+            "weight": 2.0,  # Strong signal
+        },
+        "trondersk": {
+            "words": {"æ", "dæm", "hainn", "kæm", "sånn", "int", "itt",
+                      "kass", "korsn", "bærre", "nå", "dæ", "mæ"},
+            "weight": 2.0,
+        },
+        "vestlandsk": {
+            "words": {"eg", "ikkje", "kva", "korleis", "kvi", "deg",
+                      "meg", "seg", "no", "ikkje"},
+            "weight": 2.0,
+        },
+        "sorlandsk": {
+            "words": {"æ", "dæ", "kæm", "kordan", "itte", "kva",
+                      "mæ", "sæ", "no"},
+            "weight": 2.0,
+        },
+        "ostlandsk": {
+            "words": {"jæ", "dæ", "sæ", "kæ", "sånn", "kanke",
+                      "mæ", "dere", "ikke"},
+            "weight": 1.5,  # Weaker signal (closer to standard)
+        },
+    }
+    
+    @staticmethod
+    def detect_dialect(text: str) -> Optional[str]:
+        """Auto-detect dialect region from transcribed text.
+        
+        Analyzes the text for distinctive dialect markers and returns
+        the most likely dialect region, or None if no clear match.
+        
+        Args:
+            text: Transcribed text to analyze
+            
+        Returns:
+            Dialect region key (e.g. "northern_norwegian") or None
+        """
+        if not text or not text.strip():
+            return None
+        
+        text_lower = text.lower()
+        words = set(text_lower.split())
+        
+        scores = {}
+        for region, markers in CommonNorwegianVocabulary.DIALECT_MARKERS.items():
+            matches = words & markers["words"]
+            if matches:
+                score = len(matches) * markers["weight"]
+                scores[region] = score
+        
+        if not scores:
+            return None
+        
+        # Return region with highest score
+        best = max(scores, key=scores.get)
+        logger.info(
+            f"Dialect detection: {best} "
+            f"(scores: {dict(sorted(scores.items(), key=lambda x: -x[1]))})"
+        )
+        return best
     
     @staticmethod
     def get_domain_vocabulary(domain: str) -> List[str]:
