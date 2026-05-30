@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.22] - 2026-05-30
+
+### Changed
+- **Enhanced subagent workflow** (`AGENTS.md` §20) — expanded from 5 to 9 subagent patterns including optimal solution search (Pattern F), code generation (Pattern G), multi-model quality stack (Pattern H), and subagent-as-linter (Pattern I). Added model routing table (§20.7) mapping task types to best model classes. Added parallel execution patterns table. Added prompt quality checklist. Strengthened cost optimization guidance with multi-model stacking and parallelization strategies. Updated §8.7 and §17.7 to reflect the enhanced philosophy.
+
 ## [0.1.21] - 2026-05-30
 
 ### Added

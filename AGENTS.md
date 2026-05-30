@@ -126,7 +126,7 @@ Wired into the pipeline, but two known gaps remain:
 4. **Honest reporting.** Regressions, failed tests, or surprising behavior on real audio are stated explicitly. Never paper over.
 5. **Distrust audits — including your own.** Verify against code, not against doc summaries. An audit claiming "no drift" is not evidence of no drift.
 6. **Findings introduced during an audit must be added to `ISSUES.md` before being declared addressed.** Floating findings (like AUDIT K5) are not tracked work.
-7. **Use subagents for leverage.** Delegate research, QA review, documentation updates, and parallel exploration to subagents (§20). A subagent call costs less than a full turn of sequential tool calls — use them aggressively.
+7. **Use subagents for leverage.** Delegate research, QA review, architecture validation, optimal-solution search, documentation updates, code generation, and parallel exploration to subagents (§20). A subagent call costs less than a full turn of sequential tool calls — use them aggressively for everything you can.
 
 ---
 
@@ -262,9 +262,7 @@ At the start of every session, follow this sequence:
    - If a new feature is needed, **add to `ROADMAP.md`** under the appropriate phase.
 5. **Update `CHANGELOG.md`** for every new feature or change.
 6. **Commit and push** after each logical change. One change per commit. Never force-push.
-7. **Use subagents throughout** — see §20 for when and how. Delegate research, QA, documentation, and parallel exploration aggressively.
-
-This workflow ensures the canonical trackers (`ISSUES.md`, `ROADMAP.md`, `CHANGELOG.md`) stay in sync with the code at all times.
+7. **Use subagents throughout** — see §20 for when and how. Delegate research, QA, documentation, and parallel exploration aggressively. This workflow ensures the canonical trackers (`ISSUES.md`, `ROADMAP.md`, `CHANGELOG.md`) stay in sync with the code at all times.
 
 ---
 
@@ -398,22 +396,30 @@ If you are unsure whether a change is within your reliable capability, **split i
 
 ---
 
-## 20. Subagent Workflow — Work Faster, Better, Cheaper
+## 20. Subagent Workflow — The Core Productivity Lever
 
-Subagents (the `runSubagent` tool) let you delegate work to parallel agents. Use them aggressively to reduce cost, increase parallelism, and improve quality. A subagent call costs less than a full turn of sequential tool calls — and produces better results.
+Subagents (the `runSubagent` tool) are your **primary productivity multiplier**. Use them aggressively for everything: research, quality assurance, architecture validation, finding optimal solutions, parallel work, documentation, cost reduction, and code generation. A subagent call costs less than a full turn of sequential tool calls — and produces better results.
 
-### 20.1 When to use subagents
+**Core philosophy:** Subagents are not a luxury or an afterthought. They are how you work faster, better, cheaper, and more reliably. Every task that can be delegated, should be delegated. Every decision that can be validated, should be validated. Every doc that can be updated in parallel, should be.
+
+### 20.1 When to use subagents — the complete list
 
 | Situation | Why subagent | Example |
 |---|---|---|
 | **Research** | Don't burn your context on reading files you won't edit | "Read `src/transcribe.py` and tell me how `_split_long_segments` works" |
 | **Quality assurance** | Get a second opinion on architecture decisions | "Review my planned change to `config.py` — is there a simpler approach?" |
-| **Documentation** | Update docs while you keep coding | "Update `CHANGELOG.md` with the changes I just made" |
+| **Architecture validation** | Validate design decisions against constraints | "Will this approach work on CPU-only Mac? Check for MPS/CUDA assumptions" |
+| **Finding optimal solutions** | Explore multiple approaches before committing | "Compare 3 ways to implement X: pros, cons, complexity. Recommend one." |
 | **Parallel exploration** | Investigate multiple options simultaneously | "Search for the best way to implement X in 3 different approaches" |
 | **Code review** | Catch bugs before they reach the test suite | "Review this diff for edge cases I might have missed" |
 | **Test writing** | Write tests while you implement the feature | "Write pytest tests for the new `_split_long_segments` function" |
-| **Architecture validation** | Validate design decisions against constraints | "Will this approach work on CPU-only Mac? Check for MPS/CUDA assumptions" |
+| **Documentation** | Update docs while you keep coding | "Update `CHANGELOG.md` with the changes I just made" |
 | **Cost reduction** | Small models for simple tasks, big models for hard ones | "Use a cheap subagent to grep the codebase, then use the result yourself" |
+| **Code generation** | Generate boilerplate or well-scoped code | "Write a Python dataclass for X with validation and serialization" |
+| **Debugging** | Isolate root causes faster | "Read this traceback and the relevant source. Find the root cause." |
+| **Performance analysis** | Profile and suggest optimizations | "Read this function. Where are the bottlenecks? Suggest 3 optimizations." |
+| **Security review** | Catch vulnerabilities before they ship | "Review this file for injection risks, path traversal, or secret leaks" |
+| **Decision records** | Document why a choice was made | "Write an ADR explaining why we chose approach A over B and C" |
 
 ### 20.2 When NOT to use subagents
 
@@ -479,6 +485,55 @@ overrides config.yaml's max_segment_duration. Read the relevant files and tell m
 Do NOT edit any files."
 ```
 
+#### Pattern F: Optimal solution search
+
+Before implementing, have a subagent explore the design space:
+
+```
+Subagent prompt: "I need to implement feature X in this Python codebase.
+Read the relevant files and suggest 3 different approaches ranked by:
+(1) Simplicity, (2) Performance, (3) Maintainability, (4) Fit with existing patterns.
+For each approach, estimate LOC and risk. Recommend one. Do NOT edit any files."
+```
+
+#### Pattern G: Subagent generates code, you review
+
+For well-scoped, self-contained code generation:
+
+```
+Subagent prompt: "Write a Python function that does X. It must:
+- Accept parameters: [list]
+- Return: [type]
+- Handle edge cases: [list]
+- Include type hints and docstring
+- Follow the patterns in src/utils.py (read it first)
+Write ONLY the function. Do NOT modify any existing files."
+```
+
+#### Pattern H: Multi-model quality stack
+
+Use different models for different quality levels — cheap model for first pass, expensive model for review:
+
+```
+Turn 1 (cheap model): "Write a first draft of function X. Cover the happy path."
+Turn 2 (expensive model): "Review this function for: edge cases, type safety,
+performance, and correctness. The function does X. Return specific improvements."
+Turn 3 (cheap model): "Apply the improvements from the review. Update the function."
+```
+
+This gives you near-expert quality at a fraction of the cost.
+
+#### Pattern I: Subagent-as-linter
+
+Before committing, have a subagent do a final quality pass:
+
+```
+Subagent prompt: "Read the diff between these two git refs (or the staged changes).
+Check for: (1) debug code left in, (2) missing error handling, (3) silent failures,
+(4) type mismatches, (5) violations of project conventions.
+Return a bullet list of issues. Do NOT edit any files."
+```
+
 ### 20.4 Writing effective subagent prompts
 
 A good subagent prompt has four parts:
@@ -491,14 +546,24 @@ A good subagent prompt has four parts:
 Bad: "Check the code for bugs."
 Good: "Read `src/transcribe.py` lines 100-200. The `_split_long_segments` function splits segments >15s. Check for: (1) off-by-one errors in the split calculation, (2) whether word-level timestamps are preserved correctly, (3) what happens if a segment has 0 words. Return a bullet list. Do NOT edit any files."
 
-### 20.5 Cost optimization
+**Prompt quality checklist:**
+- ✅ Does the prompt include enough context for a stateless agent?
+- ✅ Does it specify exactly what NOT to touch?
+- ✅ Does it specify the output format?
+- ✅ Does it include file paths and line numbers?
+- ✅ Does it constrain the scope tightly enough?
+
+### 20.5 Cost optimization — get more done for less
 
 - **Use subagents for cheap research** instead of burning expensive context-window tokens on reading files you won't edit.
 - **Batch independent reads** into one subagent call rather than multiple sequential `read_file` calls.
-- **Use smaller/cheaper models for subagents** when the task is simple (grep, file reading, formatting).
+- **Use smaller/cheaper models for subagents** when the task is simple (grep, file reading, formatting). Reserve expensive models for architecture, code review, and complex reasoning.
 - **One subagent call is cheaper than 10 sequential tool calls** — prefer delegation over iteration.
+- **Multi-model quality stack (Pattern H):** Use a cheap model for first drafts, an expensive model for review, then a cheap model to apply fixes. This gives expert quality at budget prices.
+- **Parallelize everything:** Instead of doing 3 research tasks sequentially, fire 3 subagents in parallel. Same cost, 3× faster wall-clock time.
+- **Don't over-prompt:** A 50-word prompt to a cheap subagent costs less than a 500-word prompt. Be concise.
 
-### 20.6 Parallel execution
+### 20.6 Parallel execution — the force multiplier
 
 When you have multiple independent tasks, fire subagents simultaneously:
 
@@ -509,10 +574,44 @@ Turn 2: Collect both results, combine insights, implement
 
 This cuts wall-clock time in half for research-heavy sessions.
 
-### 20.7 Subagent safety rules
+**Parallel execution patterns:**
+
+| Pattern | What to parallelize | Example |
+|---|---|---|
+| **Research split** | Independent file reads | Subagent A reads `transcribe.py`, B reads `config.py`, C reads `diarize.py` |
+| **QA split** | Independent review dimensions | Subagent A checks correctness, B checks performance, C checks security |
+| **Implementation split** | Independent code changes | Subagent A writes tests, B implements feature, C updates docs |
+| **Validation split** | Independent validation | Subagent A runs tests, B reviews diff, C checks for drift |
+| **Exploration split** | Independent approaches | Subagent A tries approach 1, B tries approach 2, C tries approach 3 |
+
+**Rule of thumb:** If you can describe two tasks that don't depend on each other, fire them in parallel. Don't wait.
+
+### 20.7 Model routing — use the right tool for each job
+
+Different subagent models have different strengths. Route tasks to the model best suited for them:
+
+| Task type | Best model class | Why |
+|---|---|---|
+| **Grep / file search / simple reads** | Smallest/cheapest available | Fast, cheap, good enough |
+| **Boilerplate code generation** | Small/medium coder model | Good at patterns, low cost |
+| **Test writing** | Medium coder model | Needs to understand code but not deep reasoning |
+| **Documentation updates** | Any model with good writing | Low complexity, high volume |
+| **Architecture design** | Large reasoning model | Needs trade-off analysis and system thinking |
+| **Code review / QA** | Large reasoning model | Needs to catch subtle bugs and edge cases |
+| **Debugging complex issues** | Large reasoning model | Needs to trace causality across modules |
+| **Security review** | Large model with security training | Needs to know OWASP, injection patterns, etc. |
+| **Performance optimization** | Large reasoning model | Needs to understand algorithmic complexity |
+| **Decision records (ADRs)** | Medium model with good writing | Needs to articulate trade-offs clearly |
+
+**If your platform supports model selection per subagent call, use it.** Don't use a $0.10 model for a $0.01 task, and don't use a $0.01 model for a task that needs deep reasoning.
+
+### 20.8 Subagent safety rules
 
 1. **Never pass secrets** in subagent prompts (they may be logged).
 2. **Always specify "Do NOT edit any files"** for research-only subagents — otherwise they may make unwanted changes.
 3. **Verify subagent output** — subagents can hallucinate just like any model. Cross-check file paths, line numbers, and code snippets.
 4. **Subagents are stateless** — they don't see the conversation history. Include all necessary context in the prompt.
 5. **Prefer read-only subagents** for research. Only use write-capable subagents when you explicitly want them to edit files.
+6. **Pin file paths and line numbers** in your prompts — don't assume the subagent will find them correctly.
+7. **Specify the output format explicitly** — "Return a bullet list" is better than "Tell me what you find."
+8. **Set expectations about thoroughness** — say "quick scan" or "thorough review" so the subagent budgets its effort appropriately.
