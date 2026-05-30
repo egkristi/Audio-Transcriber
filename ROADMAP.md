@@ -74,8 +74,9 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 - [~] Apple Silicon acceleration with CoreML / MLX support — CTranslate2 does not support MPS; whisper.cpp+CoreML or MLX would require a separate engine. Deferred.
 - [x] CUDA/GPU support for Linux/Windows — device auto-detection implemented (#13). CTranslate2 uses CUDA when available; PyTorch diarization uses CUDA/MPS.
 - [x] Model caching and memory optimization for batch jobs — language detection model cached (`_language_model`); transcription model loaded once per run. Full batch memory optimization is future work.
-- [ ] **VAD chunk_size control at model-load time** — add `vad_options` dict with configurable `chunk_size` (e.g., 10s) to `whisperx.load_model()` in `src/transcribe.py:_load_model()`. This is the single highest-ROI fix identified by test runs: the default 30s VAD chunk causes stuttering in conversational speech. Config key: `transcription.vad_options.chunk_size` in `config.yaml`.
-- [ ] **Remove or disable post-processing split by default** — `_split_long_segments()` with `max_segment_duration: 15` INCREASED WER from 63.67% to 85.94% in testing. Post-processing split should be opt-in only, with a clear warning that it may degrade accuracy.
+- [x] **VAD chunk_size control at model-load time** — added `vad_options` dict with configurable `chunk_size` (10s) to `whisperx.load_model()` in `src/transcribe.py:_load_model()`. Config key: `transcription.vad_options.chunk_size` in `config.yaml`. (ISSUES.md #44)
+  - **Result:** chunk_size=10 improved WER from 85.94% (v3) to 70.25% (v4) — Δ = -15.69pp. But overcorrected: deletions exploded from 313 to 1,301. Optimal chunk_size likely between 10 and 30. **Next: test chunk_size=20.**
+- [x] **Disable post-processing split by default** — `_split_long_segments()` with `max_segment_duration: 15` INCREASED WER from 63.67% to 85.94% in testing. Post-processing split is now opt-in only (default `max_segment_duration=0`), with a clear warning that it may degrade accuracy.
 - [ ] Performance profiling and resource usage monitoring — **next priority after fasit exists**
 
 ### Phase 7: Quality & documentation
@@ -206,6 +207,36 @@ First-ever WER measurement against a real ground-truth transcript. Pipeline run 
 | Deletions | 313 |
 | Insertions | 662 |
 
+#### WER results — v4 (VAD chunk_size=10, no post-processing split)
+
+| Metric | Value |
+|--------|-------|
+| **WER** | **70.25%** |
+| CER | 57.26% |
+| Reference words | 2,810 |
+| Hypothesis words | 1,615 |
+| Hits (correct) | 942 |
+| Substitutions | 567 |
+| Deletions | 1,301 |
+| Insertions | 106 |
+| Segments | 55 |
+| Adjacent repeated words | 36 |
+
+#### WER comparison across all runs
+
+| Metric | v1 (baseline) | v2 (split) | v3 (no split) | v4 (chunk=10) |
+|--------|:------------:|:---------:|:------------:|:-------------:|
+| **WER** | **63.67%** | **89.47%** | **85.94%** | **70.25%** |
+| Hyp words | 2,415 | 3,362 | 3,159 | 1,615 |
+| Hits | 1,020 | 1,063 | 1,057 | 942 |
+| Substitutions | 1,042 | 1,532 | 1,440 | 567 |
+| Deletions | 748 | 215 | 313 | 1,301 |
+| Insertions | 347 | 767 | 662 | 106 |
+| Segments | — | — | 109 | 55 |
+| Stutter (adj repeats) | — | — | 62 | 36 |
+
+**Key insight:** chunk_size=10 improves WER by 15.69pp vs v3 (85.94% → 70.25%) but overcorrects — deletions explode from 313 to 1,301 while insertions drop from 662 to 106. The model is too conservative, missing large chunks of speech. The optimal chunk_size is likely between 10 and 30 seconds.
+
 #### Error analysis
 
 1. **Deletions dominate in v1 (998/2,640 = 37.8%):** The model misses entire phrases. Likely causes: (a) 30-second VAD segments are too long for conversational speech with pauses — the model fills silence with stuttering/repetition instead of advancing; (b) the model struggles with crosstalk and overlapping speech common in phone calls.
@@ -226,11 +257,13 @@ First-ever WER measurement against a real ground-truth transcript. Pipeline run 
 
 The 63.67% WER is far above the 15–25% range estimated before the fasit existed. This means the model is **not usable for unattended transcription** — every output needs full human review and correction. The confidence system's 100% flag rate was correct: every segment genuinely needs review.
 
-The single highest-ROI fix is **VAD chunk_size at model-load time** — the current 30-second WhisperX VAD default produces segments that are too long for conversational speech, causing stuttering and missed content. Passing `vad_options={"chunk_size": 10}` to `whisperx.load_model()` should produce shorter VAD-merged segments BEFORE transcription, preventing stuttering at the source. Post-processing split (`_split_long_segments()`) should be removed or disabled by default since it makes WER worse.
+The VAD chunk_size fix (chunk_size=10) improved WER from 85.94% (v3) to 70.25% (v4) — a 15.69pp improvement — but overcorrected. Deletions exploded from 313 to 1,301, meaning the model misses too much speech. The optimal chunk_size is likely between 10 and 30 seconds. **Next step: test chunk_size=20** as a middle ground.
+
+Post-processing split (`_split_long_segments()`) is disabled by default since it makes WER worse (+22-26pp).
 
 ### Stratified sample run (2026-05-30)
 
-A stratified sample of 10 files (5 Håvard Kristiansen + 5 Elida Anna Wiktoria Kristiansen) across size ranges (2 small <1MB, 4 medium 1-20MB, 4 large >20MB) is running in background. Results pending — estimated 2-4 hours on CPU.
+A stratified sample of 10 files (5 Håvard Kristiansen + 5 Elida Anna Wiktoria Kristiansen) across size ranges (2 small <1MB, 4 medium 1-20MB, 4 large >20MB) is running in background. Results pending — estimated 2-4 hours on CPU. As of 22:20, 4/10 files processed (3 Håvard + 1 Elida).
 
 ### Single-file test (142s)
 
@@ -321,7 +354,8 @@ These milestones are based on the empirical baseline (mean confidence 0.447, 100
   - **Long segments hurt accuracy:** 30-second segments are too long for conversational speech with pauses. Shorter segments would reduce stuttering and improve alignment.
   - **Alignment model still broken:** Only 10/55 segments have word-level scores from `nb-wav2vec2-1b-bokmaal-v2`.
   - **Hypothesis is 28% shorter than reference** (1,894 vs. 2,640 words) — the model misses entire phrases, especially names, numbers, and dialect content.
-- **Gate for next:** WER baseline known (63.67%). Next priority: reduce WER through shorter segments, better dialect handling, and prompt optimization.
+- **VAD chunk_size fix (v4):** chunk_size=10 improved WER from 85.94% to 70.25% (Δ = -15.69pp) vs v3, but overcorrected — deletions increased from 313 to 1,301. Optimal chunk_size likely between 10 and 30.
+- **Gate for next:** WER baseline known (63.67%). Next priority: find optimal VAD chunk_size (test 20s), then reduce WER through better dialect handling and prompt optimization.
 
 ### M2 — Dialect-aware confidence + vocabulary expansion ✅ (2026-05-30)
 - **Target confidence:** 0.55 mean (calibrated)

@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.25] - 2026-05-30
+
+### Added
+- **Fasit1 v4 WER evaluation results** — comprehensive comparison across all 4 runs documented in ISSUES.md #44, ROADMAP.md, and CHANGELOG.md.
+
+### Changed
+- **ISSUES.md #44 updated** — WER re-evaluation complete. chunk_size=10 improves WER by 15.69pp vs v3 (85.94% → 70.25%) but overcorrects: deletions 313→1301. Optimal chunk_size likely between 10 and 30. Next step: test chunk_size=20.
+- **ISSUES.md #39 updated** — root cause #1 (long segments) partially addressed; chunk_size=10 overcorrects.
+- **ISSUES.md #40 updated** — stuttering reduced from 62 to 36 adjacent repeats. Still present but improved.
+- **ROADMAP.md** — v4 results added to test run findings with full comparison table. Phase 6 updated with v4 outcome. M1 section updated with v4 findings.
+
+## [0.1.24] - 2026-05-30
+
+### Added
+- **VAD chunk_size control at model-load time** (ISSUES.md #44) — `_load_model()` in `src/transcribe.py` now passes `vad_options` dict to `whisperx.load_model()`. Configurable via `config.yaml` `transcription.vad_options.chunk_size` (default: 10s). This is the single highest-ROI fix: the default 30s VAD chunk caused stuttering in conversational speech by merging VAD segments too aggressively before transcription.
+- **`vad_options` config section** (`config.yaml`) — new `transcription.vad_options` block with `chunk_size`, `vad_onset`, and `vad_offset` parameters, passed directly to WhisperX's Silero VAD.
+
+### Changed
+- **Post-processing split disabled by default** — `_split_long_segments()` now defaults to `max_segment_duration=0` (disabled). Previous default of 15s was counterproductive, increasing WER by +22-26 percentage points in testing. When enabled, a warning is logged explaining the tradeoff.
+- **ISSUES.md** — #39 and #40 marked Resolved (VAD chunk_size fix). New issue #44 added tracking the fix and pending WER re-evaluation.
+- **ROADMAP.md** — Phase 6 VAD chunk_size control and post-processing split items marked completed.
+
 ## [0.1.23] - 2026-05-30
 
 ### Added

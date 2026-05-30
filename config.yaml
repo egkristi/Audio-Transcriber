@@ -46,7 +46,20 @@ transcription:
   vad_filter: true  # Filter silence before transcription
   condition_on_previous_text: true  # Use context from previous segments
   max_segment_duration: 15  # Max segment duration in seconds. Longer segments are split to reduce stuttering/repetition. Default 15s (was 30s, see #40).
+  # NOTE: Post-processing split (_split_long_segments) is COUNTERPRODUCTIVE —
+  # it increases WER by dividing already-stuttered output into more pieces.
+  # The real fix is VAD chunk_size at model-load time (see vad_options below).
+  # Set to 0 to disable post-processing split entirely.
   language: "no"  # Norwegian
+  
+  # VAD options passed to whisperx.load_model() — controls VAD merging BEFORE
+  # transcription. Default chunk_size=30s causes stuttering in conversational
+  # speech. Setting chunk_size=10 produces shorter VAD-merged segments that
+  # reduce stuttering at the source. (See ISSUES.md #40, #44)
+  vad_options:
+    chunk_size: 10  # Seconds. Lower = shorter segments, less stuttering
+    vad_onset: 0.500  # VAD activation threshold
+    vad_offset: 0.363  # VAD deactivation threshold
   
   # Confidence thresholds — AGGRESSIVE for maximum flagging without ground truth
   low_confidence_threshold: 0.70  # Lower = flag more segments

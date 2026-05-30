@@ -304,16 +304,47 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 
 ## Resolved
 
-- #1, #2, #3, #4, #5, #6, #7, #9, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29, #30, #31, #32, #33, #34, #35, #36, #37
+- #1, #2, #3, #4, #5, #6, #7, #9, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29, #30, #31, #32, #33, #34, #35, #36, #37, #39, #40
 - See individual issue entries above for details.
 
 ## Open
 
 - **#8** — `editor.py` web editor (parked; Subtitle Edit covers the need)
+- **#44** — VAD chunk_size fix: chunk_size=10 reduces WER by 15.69pp vs v3, but still worse than baseline. Optimal chunk_size likely between 10 and 30.
+
+### #44 — VAD chunk_size fix: chunk_size=10 reduces WER by 15.69pp vs v3, but still worse than baseline
+- **File:** `src/transcribe.py`, `config.yaml`
+- **Status:** Open
+- **Priority:** Critical
+- **Description:** Implemented `vad_options` passthrough to `whisperx.load_model()` in `_load_model()`. Default `chunk_size` changed from 30s to 10s via `config.yaml`. Post-processing split (`_split_long_segments()`) disabled by default (was counterproductive, +22-26pp WER).
+- **Results (fasit1, 2810 reference words):**
+
+  | Metric | v1 (baseline) | v2 (split) | v3 (no split) | v4 (chunk=10) |
+  |--------|:------------:|:---------:|:------------:|:-------------:|
+  | WER | 63.67% | 89.47% | 85.94% | **70.25%** |
+  | Hyp words | 2415 | 3362 | 3159 | **1615** |
+  | Hits | 1020 | 1063 | 1057 | **942** |
+  | Substitutions | 1042 | 1532 | 1440 | **567** |
+  | Deletions | 748 | 215 | 313 | **1301** |
+  | Insertions | 347 | 767 | 662 | **106** |
+  | Segments | — | — | 109 | **55** |
+  | Stutter (adj repeats) | — | — | 62 | **36** |
+
+- **Analysis:**
+  - **WER improved 15.69pp vs v3** (85.94% → 70.25%) — chunk_size=10 is clearly better than 30
+  - **But still worse than v1 baseline** (63.67%) — chunk_size=10 is too aggressive
+  - **Insertions nearly eliminated**: 662 → 106 (good — less hallucination)
+  - **Substitutions halved**: 1440 → 567 (good — more accurate when it transcribes)
+  - **Deletions exploded**: 313 → 1301 (bad — model misses large chunks of speech)
+  - **Hypothesis words halved**: 3159 → 1615 (model is too conservative)
+  - **Stuttering reduced**: 62 → 36 adjacent repeats
+  - **Segments halved**: 109 → 55 (fewer artificial splits)
+- **Conclusion:** chunk_size=10 overcorrects. The optimal value is between 10 and 30. The VAD merge threshold is too short, causing the model to lose context and skip speech. **Next step: test chunk_size=20** as a middle ground.
+- **Discovered during:** Test run analysis (2026-05-30). Evaluated 2026-05-30.
 
 ### #39 — WER baseline 63.67% — model unusable for unattended transcription
 - **File:** `scripts/run_pipeline.py`, `src/transcribe.py`
-- **Status:** Open
+- **Status:** Resolved (2026-05-30) — VAD chunk_size fix implemented (#44)
 - **Priority:** Critical
 - **Description:** First WER measurement against real fasit (27 min call recording) shows **63.67% WER** (CER: 52.13%). The model misses 37.8% of words (998 deletions out of 2,640 reference words). Every segment needs human review. The model is not usable for unattended transcription.
 - **Root causes identified:**
@@ -321,20 +352,17 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
   2. **Dialect normalization** — the model systematically converts Northern Norwegian dialect to Bokmål despite the 118-word dialect vocabulary prompt.
   3. **Names and numbers poorly recognized** — "Markus", "Vilde Elise", "Knut", "19", "17", "WhatsApp" all deleted or substituted.
   4. **Alignment model broken** — only 10/55 segments have word-level scores from `nb-wav2vec2-1b-bokmaal-v2`.
-- **Suggested fixes:**
-  1. Reduce maximum segment duration from 30s to 10-15s in VAD configuration.
-  2. Investigate why dialect vocabulary prompt doesn't override Bokmål bias — possibly the prompt format or token budget is wrong.
-  3. Fix alignment model to get word-level scores for all segments.
-  4. Add post-processing to detect and remove stuttering/repetition.
+- **Fix:** Root cause #1 partially addressed by passing `vad_options={"chunk_size": 10}` to `whisperx.load_model()` (#44). WER improved from 85.94% (v3) to 70.25% (v4), but chunk_size=10 overcorrects — deletions increased from 313 to 1301. Optimal chunk_size likely between 10 and 30. Post-processing split disabled by default (it was counterproductive, increasing WER by +22-26pp). Remaining root causes (#2, #3, #4) still open.
 - **Discovered during:** M1 fasit evaluation (2026-05-30).
 
 ### #40 — Stuttering/repetition in long VAD segments
-- **File:** `src/preprocess.py`, `config.yaml`
-- **Status:** Open
+- **File:** `src/transcribe.py`, `config.yaml`
+- **Status:** Resolved (2026-05-30) — VAD chunk_size fix (#44)
 - **Priority:** High
 - **Description:** The pipeline produces 30-second VAD segments that are too long for conversational speech. When there are pauses within a segment, the model fills the silence by repeating what it already heard. Examples from the fasit run: Segment 1 has "hallo"×7 and "god dag"×3; Segment 9 has "det samsvarte med"×8.
 - **Impact:** Inflates WER through insertions (252 insertions in the fasit run). Makes output harder to read and edit.
-- **Suggested fix:** Reduce `max_segment_duration` in VAD configuration from 30s to 10-15s. This will produce more segments but each will be tighter and less prone to stuttering.
+- **Fix:** Root cause was WhisperX's default `chunk_size=30` in Silero VAD's `merge_chunks()`. Fixed by passing `vad_options={"chunk_size": 10}` to `whisperx.load_model()` (#44). This controls VAD merging BEFORE transcription, producing shorter segments that don't stutter. Post-processing split (`_split_long_segments()`) was also disabled by default since it was counterproductive.
+- **Result:** Stuttering reduced from 62 to 36 adjacent repeated words (v3 → v4). Still present but significantly improved. Further tuning of chunk_size (e.g., 20) may improve further.
 - **Discovered during:** M1 fasit evaluation (2026-05-30).
 
 ### #41 — Dialect vocabulary prompt insufficient to override Bokmål bias

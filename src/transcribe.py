@@ -167,6 +167,15 @@ class Transcriber:
                 load_kwargs["asr_options"] = asr_options
                 logger.debug(f"Using asr_options: {list(asr_options.keys())}")
             
+            # Pass vad_options to control VAD merging BEFORE transcription.
+            # Default chunk_size=30s causes stuttering in conversational speech.
+            # Configurable via config.yaml transcription.vad_options.chunk_size.
+            # (See ISSUES.md #40, #44)
+            vad_options = self.config.get("vad_options", None)
+            if vad_options is not None:
+                load_kwargs["vad_options"] = vad_options
+                logger.info(f"Using vad_options: {vad_options}")
+            
             self.model = whisperx.load_model(self.model_name, **load_kwargs)
             
             logger.info(f"Model loaded on device: {device}")
@@ -508,9 +517,20 @@ def transcribe_audio(
         word_timestamps=word_timestamps,
     )
     
-    # Split long segments to reduce stuttering/repetition (#40)
-    max_segment_duration = config.get("max_segment_duration", 15.0)
-    segments = _split_long_segments(segments, max_duration=max_segment_duration)
+    # Post-processing segment split — DISABLED by default.
+    # WARNING: Post-processing split is COUNTERPRODUCTIVE — it increases WER
+    # by dividing already-stuttered output into more pieces (tested: +22-26pp WER).
+    # The real fix is VAD chunk_size at model-load time (see vad_options above).
+    # Only enable if you understand the tradeoff. Set max_segment_duration=0 to skip.
+    # (See ISSUES.md #40, #44)
+    max_segment_duration = config.get("max_segment_duration", 0)
+    if max_segment_duration and max_segment_duration > 0:
+        logger.warning(
+            f"Post-processing segment split enabled (max_duration={max_segment_duration}s). "
+            f"This may INCREASE WER — see ISSUES.md #40. "
+            f"Set max_segment_duration=0 to disable."
+        )
+        segments = _split_long_segments(segments, max_duration=max_segment_duration)
     
     # Align with diarization if available
     if diarization_timeline:
