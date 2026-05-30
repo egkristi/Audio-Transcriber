@@ -69,6 +69,7 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 - [ ] Add troubleshooting guide — **add after collecting common failure modes from real runs**
 - [x] Add example workflows to README — batch and single-file examples present
 - [ ] Add API documentation / developer reference — **deferred until API stabilizes**
+- [ ] **Word-level forced alignment** — nb-whisper-large-verbatim via faster-whisper lacks `align()`. Consider using a separate wav2vec2 alignment model (e.g., `NbAiLab/nb-wav2vec2-1b-bokmaal`) for forced alignment after transcription, or switch to a WhisperX-compatible model for the alignment step only. Tracked as ISSUES.md #30.
 
 ### Phase 8: Dialect recognition & adaptation
 - [~] **Dialect-aware normalization** (`src/normalize.py`) — basic dialect word flagging implemented for Northern Norwegian (Nordland, Troms, Finnmark). Dialect words are flagged for awareness but NOT auto-corrected. See `NORWEGIAN_DIALECT_MAP`.
@@ -77,6 +78,17 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 - [ ] **Multi-dialect support** — extend dialect map to cover other Norwegian dialects (Trøndersk, Vestlandsk, Sørlandsk, Østlandsk) with region detection heuristics based on distinctive word patterns.
 - [ ] **Dialect confidence scoring** — add dialect-specific confidence signals: flag segments where Whisper outputs standard forms but dialect forms are expected, and vice versa. Prioritize these for review.
 - [ ] **Dialect-preserving output** — ensure that dialect features are preserved in SRT output and not silently normalized to Bokmål. The current approach (flag but don't correct) is the foundation; formalize as a configurable option (`--preserve-dialect`).
+
+## Test run findings (2026-05-30)
+
+Real pipeline execution on `testdata/Call recording Elida Anna Wiktoria Kristiansen_251023_190409.m4a` (142s, 48kHz AAC) with `--dialect northern_norwegian` revealed:
+
+1. **Confidence hard-rules working:** 5 segments processed, all flagged. Segment with `repeated_words` + `repeated_phrases` + `possible_proper_noun` correctly ranked highest (0.517). Segments with only `low_logprob` ranked lower (0.372-0.500).
+2. **Normalization working:** 21 issues flagged across 5 segments — punctuation restoration (commas before clause markers, periods, question marks) and repetition detection.
+3. **Dialect vocabulary injected:** 34 Northern Norwegian dialect words added to initial prompt. Dialect forms ("ja", "da") preserved in output.
+4. **Language detection:** Confidence 0.47 for Norwegian — correctly fell back to "no" (Norwegian).
+5. **Word-level alignment unavailable:** `'FasterWhisperPipeline' object has no attribute 'align'` — non-fatal warning, alignment scores not available for confidence extraction.
+6. **Transcription speed:** ~40s for 142s audio on CPU (Mac M1). Expected.
 
 ## Test run findings (2026-05-29)
 

@@ -238,6 +238,14 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 - **Fix:** Changed `use_auth_token=True` to `token=True`.
 - **Discovered during:** Real pipeline test run (2026-05-29).
 
+### #30: Word-level alignment unavailable — `FasterWhisperPipeline` has no `align` attribute
+- **File:** `src/transcribe.py`
+- **Status:** Open
+- **Description:** The nb-whisper-large-verbatim model loaded via faster-whisper does not support the `align()` method that WhisperX expects for word-level forced alignment. This means `alignment_score` and `min_word_alignment_score` are always `None` in confidence extraction.
+- **Impact:** Confidence scoring lacks acoustic alignment signals — one of the most useful signals for detecting misrecognitions. The confidence module falls back to decoder signals (avg_logprob, no_speech_prob) and hard-rules only.
+- **Workaround:** Hard-rules (numbers, proper nouns, repetition, all-caps) still catch most high-risk segments. Decoder signals (avg_logprob, no_speech_prob) provide partial coverage.
+- **Potential fix:** Use a separate wav2vec2 alignment model (e.g., `NbAiLab/nb-wav2vec2-1b-bokmaal`) for forced alignment after transcription, or switch to a WhisperX-compatible model for the alignment step only.
+
 ## Resolved
 
 - #1, #2, #3, #4, #5, #6, #7, #9, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29
