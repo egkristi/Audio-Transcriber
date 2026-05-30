@@ -269,20 +269,29 @@ class ConfidenceExtractor:
                     flags.append("low_snr")
             
             # 9. HARD RULE: Numbers — always flag regardless of score
-            # WhisperX alignment is weak for numeric tokens; these are high-risk
+            # WhisperX alignment is weak for numeric tokens; these are high-risk.
+            # "Confidently wrong" errors on numbers are invisible to acoustic signals,
+            # so this rule must dominate the priority score.
             import re
-            if re.search(r'\d', seg.text):
-                scores.append(0.5)  # moderate boost
-                flags.append("contains_numbers")
+            digit_count = len(re.findall(r'\d', seg.text))
+            if digit_count > 0:
+                # Strong boost proportional to digit count — ensures these segments
+                # always appear at the top of the review list
+                scores.append(min(0.9, 0.3 + 0.1 * digit_count))
+                flags.append(f"contains_numbers:{digit_count}")
             
-            # 10. HARD RULE: Proper nouns (capitalized words not at sentence start)
-            # These are often "confidently wrong" — high decoder score but wrong name
+            # 10. HARD RULE: Capitalized OOV tokens (proper nouns not at sentence start)
+            # These are often "confidently wrong" — high decoder score but wrong name.
+            # Whisper may substitute a plausible-sounding name that is completely wrong.
             words = seg.text.split()
+            proper_noun_count = 0
             for i, word in enumerate(words):
                 if len(word) > 1 and word[0].isupper() and i > 0:
-                    scores.append(0.3)  # small boost per proper noun
-                    flags.append("possible_proper_noun")
-                    break  # flag once per segment
+                    proper_noun_count += 1
+            if proper_noun_count > 0:
+                # Strong boost — proper noun substitutions are invisible to confidence
+                scores.append(min(0.85, 0.3 + 0.15 * proper_noun_count))
+                flags.append(f"possible_proper_noun:{proper_noun_count}")
             
             # 11. HARD RULE: Repetition — 3+ identical consecutive words = hallucination
             # Whisper often gets stuck repeating words when uncertain
@@ -384,7 +393,21 @@ class ConfidenceExtractor:
                 scores.append(0.3)
                 flags.append("incomplete_ending")
             
-            # 20. HARD RULE: All-lowercase segment (Norwegian uses sentence case)
+            # 20. HARD RULE: All-caps tokens (acronyms/abbreviations)
+            # Whisper often hallucinates or misrecognizes acronyms
+            all_caps = [w for w in words if len(w) >= 2 and w.isupper() and w.isalpha()]
+            if all_caps:
+                scores.append(min(0.7, 0.3 + 0.1 * len(all_caps)))
+                flags.append(f"all_caps:{','.join(all_caps[:3])}")
+            
+            # 21. HARD RULE: Single-letter words (often hallucinated)
+            # Whisper sometimes outputs single letters like "a", "i", "o" as artifacts
+            single_letters = [w for w in word_list if len(w) == 1 and w.isalpha()]
+            if len(single_letters) >= 2:
+                scores.append(0.4)
+                flags.append(f"single_letter_words:{','.join(single_letters[:3])}")
+            
+            # 22. HARD RULE: All-lowercase segment (Norwegian uses sentence case)
             # All lowercase might indicate Whisper uncertainty
             if seg.text and seg.text[0].islower() and word_count > 2:
                 # Check if it's not a continuation

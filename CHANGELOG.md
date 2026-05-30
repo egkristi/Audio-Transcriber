@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-05-29
+
+### Changed
+- **Confidence hard-rules strengthened** (`src/confidence.py`) — digit tokens and capitalized OOV tokens now get a much stronger priority boost proportional to their count (up to 0.9 for numbers, up to 0.85 for proper nouns). This ensures "confidently wrong" errors (where Whisper is certain but wrong) always appear at the top of the review list, regardless of acoustic confidence scores.
+- **New hard-rules added** (`src/confidence.py`) — all-caps tokens (acronyms/abbreviations like NRK, TV2) flagged with up to 0.7 boost; single-letter word artifacts flagged with 0.4 boost.
+
 ## [0.1.11] - 2026-05-29
 
 ### Added
