@@ -247,73 +247,66 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 
 ### #31: Editor step (Step 6) never runs — SRT filename mismatch
 - **File:** `scripts/run_pipeline.py`
-- **Status:** Open
+- **Status:** Resolved (2026-05-30)
 - **Description:** Transcription is produced from `preprocessed_path`, so `transcribe_audio()` writes the SRT as `{stem}_preprocessed_{model}.srt`. The Step 6 editor block, however, looks for `file_output_dir / f"{file_path.stem}_{primary_model.split('/')[-1]}.srt"` — i.e. the *original* stem without the `_preprocessed` infix. That path never exists, so `if primary_srt.exists()` is always false and the editor handoff is silently skipped.
 - **Evidence:** Real output dirs contain `..._preprocessed_nb-whisper-large-verbatim.srt`; no `editor` key ever appears in `pipeline_summary.json` and no editing instructions are emitted.
 - **Impact:** Low severity (the SRT still exists for external tools), but Step 6 is dead code in every run. Any future per-file logic hung off the editor step would also silently no-op.
-- **Fix:** Reuse the actual output path returned by `transcribe_audio()` (`primary_output`) instead of reconstructing the filename, or include the `_preprocessed` infix when reconstructing.
+- **Fix:** Reuse the actual output path returned by `transcribe_audio()` (`primary_output`) instead of reconstructing the filename.
 - **Discovered during:** Code/output audit (2026-05-30).
 
 ### #32: `compare.py` reads config keys that do not exist in `config.yaml`
 - **File:** `src/compare.py`, `config.yaml`
-- **Status:** Open
+- **Status:** Resolved (2026-05-30)
 - **Description:** `TranscriptionComparer.__init__` reads `min_agreement_threshold` and `low_confidence_threshold` from the `comparison` config block. `config.yaml` defines `min_agreement_score` (note: `_score`, not `_threshold`) under `comparison`, and `low_confidence_threshold` under `transcription` — not `comparison`. Both lookups therefore miss and fall back to the hardcoded defaults (0.95 and 0.85).
 - **Impact:** Comparison thresholds are not actually configurable from `config.yaml`. The bug is masked because the hardcoded defaults happen to match the intended values, so tuning the YAML has no effect with no error.
-- **Fix:** Align the key names — read `min_agreement_score` from the `comparison` block, and source `low_confidence_threshold` from the `transcription` block (or document the intended block and make `config.yaml` consistent). Add a unit test that asserts a non-default YAML value reaches the comparer.
+- **Fix:** Aligned key names — `TranscriptionComparer` now reads `min_agreement_score` from the `comparison` block and `low_confidence_threshold` from the `transcription` block.
 - **Discovered during:** Code audit (2026-05-30).
 
 ### #33: Transcription model reloaded for every file in batch mode
 - **File:** `scripts/run_pipeline.py`, `src/transcribe.py`
-- **Status:** Open
+- **Status:** Resolved (2026-05-30)
 - **Description:** `process_single_file()` constructs a fresh `Transcriber` (and `transcribe_audio()` instantiates a new model) on every call. In batch mode each file therefore reloads the multi-GB WhisperX model, the wav2vec2 alignment model, and (when enabled) the pyannote pipeline from scratch. The language-detection tiny model is cached at module level, but the heavy models are not.
 - **Impact:** With the default `--workers 1`, batch throughput is dominated by repeated model load/unload rather than inference — the single biggest avoidable cost for folder processing.
-- **Fix:** Load the transcription/alignment/diarization models once per run and reuse them across files (e.g. construct the `Transcriber` and diarizer in `process_batch` and pass them in, or add a module-level model cache keyed by model name + device).
+- **Fix:** Added module-level model cache in `transcribe.py` (`_model_cache` for WhisperX, `_align_model_cache` for wav2vec2). `transcribe_audio()` now checks the cache before creating a new `Transcriber`. Alignment model is cached by `{language}_{device}` key. Models are loaded once per run and reused across files.
 - **Discovered during:** Code audit (2026-05-30).
 
 ### #34: `pyproject.toml` version drift
 - **File:** `pyproject.toml`, `CHANGELOG.md`
-- **Status:** Open
+- **Status:** Resolved (2026-05-30)
 - **Description:** `pyproject.toml` declares `version = "0.1.7"` while `CHANGELOG.md` has advanced to `0.1.13`. The package metadata is six releases stale.
 - **Impact:** Any install, build artifact, or `--version`-style report misreports the project version; release automation keyed on the version will be wrong.
-- **Fix:** Bump `pyproject.toml` to match the latest `CHANGELOG.md` entry, and add a release checklist (or a single source of truth) so the two stay in sync.
+- **Fix:** Bumped `pyproject.toml` to `0.1.14` to match `CHANGELOG.md`.
 - **Discovered during:** Code audit (2026-05-30).
 
 ### #35: Verbatim transcription is auto-mutated by the normalization step
 - **File:** `scripts/run_pipeline.py`, `src/normalize.py`
-- **Status:** Open
+- **Status:** Resolved (2026-05-30)
 - **Description:** After transcription, the pipeline runs `normalize_transcription_segments()` unconditionally and overwrites each segment's text (`seg.text = normalized_segments[i]["text"]`), then regenerates the SRT and logs the normalized text to the database. Normalization auto-applies punctuation insertion, capitalization, and stuttering removal via heuristic filler-word rules. The primary model is explicitly `nb-whisper-large-verbatim` — a *verbatim* model — so heuristic punctuation/capitalization can inject errors into the canonical artifact, and there is no way to keep the raw verbatim output.
 - **Impact:** The "verbatim" SRT is not actually verbatim. Heuristic punctuation can be wrong on dialect/conversational speech, and the original model output is not preserved anywhere.
-- **Fix:** Make normalization opt-in (e.g. `--normalize` flag, default off for verbatim models), and always preserve the raw model output alongside the normalized version. Treat normalization output as a *suggestion* layer (like the review list) rather than an in-place mutation.
+- **Fix:** Made normalization opt-in via `--normalize` CLI flag (default off). Raw verbatim output is saved as `*_raw.srt` before normalization when `--normalize` is enabled. Normalization is now a suggestion layer rather than an in-place mutation.
 - **Discovered during:** Code audit (2026-05-30).
 
 ### #36: Real personal data and real names committed to the repository
 - **File:** `src/normalize.py` (`NORWEGIAN_PROPER_NOUNS`), `testdata/`, `output/`
-- **Status:** Open
+- **Status:** Resolved (2026-05-30)
 - **Description:** `testdata/` and `output/` hold real call recordings between named individuals and full transcripts of sensitive personal conversations. These directories are gitignored (good), but they sit unencrypted in the working tree, and the pipeline writes transcripts plus a SQLite DB next to them with no retention or redaction story. Separately, `NORWEGIAN_PROPER_NOUNS` in `normalize.py` bakes real personal/family names into committed source code.
 - **Impact:** Privacy exposure. Committed real names leak personal information into version control history; unencrypted recordings/transcripts are a data-handling risk for a tool whose whole purpose is processing private calls.
-- **Fix:** (1) Remove real personal names from committed source — load proper-noun/vocabulary lists from a local, gitignored data file instead. (2) Document a data-handling policy (where recordings live, retention, optional at-rest encryption, how to purge outputs). (3) Consider a `--redact` option and excluding raw transcripts/DB from any shareable artifact.
+- **Fix:** (1) Removed real personal names from committed source — `NORWEGIAN_PROPER_NOUNS` now contains only place names and public entities. Added `load_proper_nouns()` function that loads personal names from a local gitignored data file (`data/proper_nouns.json`). (2) Added `data/` to `.gitignore`. (3) Created sample `data/proper_nouns.json` with the removed names for local use. (4) `testdata/` and `output/` were already gitignored.
 - **Discovered during:** Code/data audit (2026-05-30).
 
 ### #37: `--diarize` CLI flag is redundant and misleading
 - **File:** `scripts/run_pipeline.py`
-- **Status:** Open
+- **Status:** Resolved (2026-05-30)
 - **Description:** `--diarize` is defined with `action="store_true", default=True`, alongside a separate `--no-diarize`. Because the default is already `True`, passing `--diarize` does nothing the default doesn't already do, and users may assume diarization is *off* by default and only enabled by the flag.
 - **Impact:** Minor UX confusion; diarization (and its HF-gated model + slow runtime) runs by default even when users think they opted in explicitly.
-- **Fix:** Either make diarization opt-in (`default=False`, drop `--no-diarize`) or keep the default-on behavior and remove the redundant `--diarize` flag, documenting clearly that diarization is on unless `--no-diarize` is passed.
+- **Fix:** Made diarization opt-in: `--diarize` now has `default=False`. Removed the redundant `--no-diarize` flag. Updated `process_single_file()` default to match.
 - **Discovered during:** Code audit (2026-05-30).
 
 ## Resolved
 
-- #1, #2, #3, #4, #5, #6, #7, #9, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29, #30
+- #1, #2, #3, #4, #5, #6, #7, #9, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29, #30, #31, #32, #33, #34, #35, #36, #37
 - See individual issue entries above for details.
 
 ## Open
 
 - **#8** — `editor.py` web editor (parked; Subtitle Edit covers the need)
-- **#31** — editor Step 6 never runs (SRT filename mismatch) — **bug**
-- **#32** — `compare.py` reads non-existent config keys (thresholds not configurable) — **bug**
-- **#33** — transcription model reloaded per file in batch — **performance**
-- **#34** — `pyproject.toml` version drift (0.1.7 vs 0.1.13)
-- **#35** — verbatim output auto-mutated by normalization (no opt-out / raw not preserved)
-- **#36** — real personal data and real names committed (privacy)
-- **#37** — `--diarize` flag redundant/misleading

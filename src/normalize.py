@@ -188,14 +188,12 @@ NORWEGIAN_DIALECT_MAP = {
     'ille': 'ikke',  # some areas
 }
 
-# Norwegian words that should always be capitalized (names, places)
-# Includes Northern Norwegian place names and common names from the dataset
+# Norwegian words that should always be capitalized (places, public entities)
+# NOTE: Real personal names have been removed from committed source (#36).
+# Load personal names from a local gitignored data file (data/proper_nouns.json)
+# using load_proper_nouns() if needed.
 NORWEGIAN_PROPER_NOUNS = {
-    'konrad', 'håvard', 'vardin', 'inger-anna', 'ingerland', 'astrid-marie',
-    'bjørn', 'geir', 'jorunn', 'davidsen', 'salomon', 'simon', 'mikkel',
-    'bremdeberg', 'sandnessjøen', 'bergem', 'salgsjukeren', 'biltemaet',
-    'poldkaia', 'røde kors',
-    # Northern Norwegian place names
+    # Northern Norwegian place names (public information)
     'nordland', 'troms', 'finnmark', 'tromsø', 'bodø', 'narvik', 'harstad',
     'hammerfest', 'alta', 'vadsø', 'kirkenes', 'mo i rana', 'mosjøen',
     'fauske', 'sortland', 'stokmarknes', 'leknes', 'svolvær', 'andøya',
@@ -205,7 +203,37 @@ NORWEGIAN_PROPER_NOUNS = {
     'rana', 'beiarn', 'saltdal', 'steigen', 'hamarøy', 'tysfjord',
     'lødingen', 'evenes', 'skånland', 'bjarkøy', 'kvæfjord', 'dyrøy',
     'sørreisa', 'målselv', 'bardu', 'salangen', 'lavangen', 'gratangen',
+    # Public entities / common terms
+    'sandnessjøen', 'bremdeberg', 'bergem', 'poldkaia', 'røde kors',
 }
+
+
+def load_proper_nouns(data_file: Optional[Path] = None) -> set:
+    """
+    Load proper nouns from a local data file, merged with the built-in set.
+    
+    The data file should be a JSON object with a "proper_nouns" key containing
+    a list of strings. This allows loading personal names from a gitignored
+    local file without committing them to the repository.
+    
+    Args:
+        data_file: Path to JSON file with proper nouns. If None, returns built-in set.
+        
+    Returns:
+        Set of proper noun strings (lowercase)
+    """
+    nouns = set(NORWEGIAN_PROPER_NOUNS)
+    if data_file and data_file.exists():
+        try:
+            import json
+            with open(data_file, encoding="utf-8") as f:
+                data = json.load(f)
+            extra = data.get("proper_nouns", [])
+            nouns.update(w.lower() for w in extra)
+            logger.info(f"Loaded {len(extra)} additional proper nouns from {data_file}")
+        except Exception as e:
+            logger.warning(f"Failed to load proper nouns from {data_file}: {e}")
+    return nouns
 
 
 def _fix_stuttering(words: List[str]) -> Tuple[List[str], List[Dict]]:

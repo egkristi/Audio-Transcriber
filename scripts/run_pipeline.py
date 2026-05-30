@@ -87,7 +87,7 @@ class AudioTranscriberPipeline:
         file_path: Path,
         output_dir: Path,
         steps: Optional[List[str]] = None,
-        diarize: bool = True,
+        diarize: bool = False,
         compare_models: bool = False,
         primary_model: str = "NbAiLab/nb-whisper-large-verbatim",
         secondary_model: str = "openai/whisper-large-v3",
@@ -95,6 +95,7 @@ class AudioTranscriberPipeline:
         vocab_file: Optional[Path] = None,
         dialect: Optional[str] = None,
         spell_check: bool = False,
+        normalize: bool = False,
         min_speakers: Optional[int] = None,
         max_speakers: Optional[int] = None,
     ) -> Dict:
@@ -270,57 +271,72 @@ class AudioTranscriberPipeline:
                         f"({metadata.flagged_segments_count}/{metadata.segments_count} segments flagged)"
                     )
                 
-                # Step: Norwegian text normalization
-                logger.info("\nSTEP: Norwegian Text Normalization")
-                try:
-                    seg_dicts_for_norm = [
-                        {
-                            "id": s.id,
-                            "start": s.start,
-                            "end": s.end,
-                            "text": s.text,
-                            "speaker": s.speaker,
-                            "words": s.words,
-                            "confidence": s.confidence,
-                            "avg_logprob": s.avg_logprob,
-                            "no_speech_prob": s.no_speech_prob,
-                            "compression_ratio": s.compression_ratio,
-                            "temperature": s.temperature,
-                        }
-                        for s in primary_segments
-                    ]
-                    normalized_segments, norm_corrections = normalize_transcription_segments(seg_dicts_for_norm)
-                    
-                    # Update primary_segments with normalized text
-                    for i, seg in enumerate(primary_segments):
-                        seg.text = normalized_segments[i]["text"]
-                    
-                    # Regenerate SRT with normalized text
-                    if primary_output and primary_output.endswith('.srt'):
-                        try:
-                            from src.transcribe import _segments_to_srt
-                            srt_text = _segments_to_srt(primary_segments)
-                            with open(primary_output, "w", encoding="utf-8") as f:
-                                f.write(srt_text)
-                            logger.info(f"SRT regenerated with normalized text: {primary_output}")
-                        except Exception as srt_err:
-                            logger.warning(f"Failed to regenerate SRT: {srt_err}")
-                    
-                    # Export normalization report
-                    if norm_corrections:
-                        norm_report_path = file_output_dir / f"{file_path.stem}_normalization_report.txt"
-                        export_normalization_report(norm_corrections, norm_report_path)
-                        results["steps"]["normalization"] = {
-                            "status": "complete",
-                            "issues_flagged": len(norm_corrections),
-                            "report": str(norm_report_path),
-                        }
-                        logger.info(f"Normalization report exported: {norm_report_path}")
-                    else:
-                        results["steps"]["normalization"] = {"status": "complete", "issues_flagged": 0}
-                except Exception as norm_err:
-                    logger.warning(f"Normalization failed: {norm_err}")
-                    results["steps"]["normalization"] = {"status": "failed", "error": str(norm_err)}
+                # Step: Norwegian text normalization (opt-in, #35)
+                if normalize:
+                    logger.info("\nSTEP: Norwegian Text Normalization")
+                    try:
+                        # Save raw (pre-normalization) output first
+                        if primary_output and primary_output.endswith('.srt'):
+                            raw_output = str(primary_output).replace('.srt', '_raw.srt')
+                            try:
+                                from src.transcribe import _segments_to_srt
+                                raw_srt = _segments_to_srt(primary_segments)
+                                with open(raw_output, "w", encoding="utf-8") as f:
+                                    f.write(raw_srt)
+                                logger.info(f"Raw verbatim SRT saved: {raw_output}")
+                            except Exception as srt_err:
+                                logger.warning(f"Failed to save raw SRT: {srt_err}")
+                        
+                        seg_dicts_for_norm = [
+                            {
+                                "id": s.id,
+                                "start": s.start,
+                                "end": s.end,
+                                "text": s.text,
+                                "speaker": s.speaker,
+                                "words": s.words,
+                                "confidence": s.confidence,
+                                "avg_logprob": s.avg_logprob,
+                                "no_speech_prob": s.no_speech_prob,
+                                "compression_ratio": s.compression_ratio,
+                                "temperature": s.temperature,
+                            }
+                            for s in primary_segments
+                        ]
+                        normalized_segments, norm_corrections = normalize_transcription_segments(seg_dicts_for_norm)
+                        
+                        # Update primary_segments with normalized text
+                        for i, seg in enumerate(primary_segments):
+                            seg.text = normalized_segments[i]["text"]
+                        
+                        # Regenerate SRT with normalized text
+                        if primary_output and primary_output.endswith('.srt'):
+                            try:
+                                from src.transcribe import _segments_to_srt
+                                srt_text = _segments_to_srt(primary_segments)
+                                with open(primary_output, "w", encoding="utf-8") as f:
+                                    f.write(srt_text)
+                                logger.info(f"SRT regenerated with normalized text: {primary_output}")
+                            except Exception as srt_err:
+                                logger.warning(f"Failed to regenerate SRT: {srt_err}")
+                        
+                        # Export normalization report
+                        if norm_corrections:
+                            norm_report_path = file_output_dir / f"{file_path.stem}_normalization_report.txt"
+                            export_normalization_report(norm_corrections, norm_report_path)
+                            results["steps"]["normalization"] = {
+                                "status": "complete",
+                                "issues_flagged": len(norm_corrections),
+                                "report": str(norm_report_path),
+                            }
+                            logger.info(f"Normalization report exported: {norm_report_path}")
+                        else:
+                            results["steps"]["normalization"] = {"status": "complete", "issues_flagged": 0}
+                    except Exception as norm_err:
+                        logger.warning(f"Normalization failed: {norm_err}")
+                        results["steps"]["normalization"] = {"status": "failed", "error": str(norm_err)}
+                else:
+                    results["steps"]["normalization"] = {"status": "skipped", "reason": "opt-in (use --normalize)"}
                 
                 # Step: Confidence-flagging for review prioritization
                 logger.info("\nSTEP: Confidence Flagging")
@@ -436,8 +452,9 @@ class AudioTranscriberPipeline:
             # Step 6: Editor
             if primary_segments and (not steps or "editor" in steps):
                 logger.info("\nSTEP 6: Manual Editing")
-                primary_srt = file_output_dir / f"{file_path.stem}_{primary_model.split('/')[-1]}.srt"
-                if primary_srt.exists():
+                # Use the actual output path returned by transcribe_audio() (#31)
+                primary_srt = Path(primary_output) if primary_output else None
+                if primary_srt and primary_srt.exists():
                     instructions = export_for_manual_editing(primary_srt, file_path)
                     results["steps"]["editor"] = {
                         "status": "ready_for_review",
@@ -561,14 +578,8 @@ Examples:
     parser.add_argument(
         "--diarize",
         action="store_true",
-        default=True,
-        help="Run speaker diarization (default: True)"
-    )
-    parser.add_argument(
-        "--no-diarize",
-        dest="diarize",
-        action="store_false",
-        help="Skip speaker diarization"
+        default=False,
+        help="Run speaker diarization (default: False; opt-in because it requires HF auth)"
     )
     parser.add_argument(
         "--min-speakers",
@@ -635,6 +646,13 @@ Examples:
         default=False,
         help="Enable Norwegian spell-checking on transcription output"
     )
+    parser.add_argument(
+        "--normalize",
+        action="store_true",
+        default=False,
+        help="Enable Norwegian text normalization (punctuation, capitalization, stuttering removal). "
+             "Off by default to preserve verbatim model output. Raw output saved as *_raw.srt when enabled."
+    )
     
     # Logging
     parser.add_argument(
@@ -687,6 +705,7 @@ Examples:
             "vocab_file": args.vocabulary_file,
             "dialect": args.dialect,
             "spell_check": args.spell_check,
+            "normalize": args.normalize,
             "min_speakers": args.min_speakers,
             "max_speakers": args.max_speakers,
         }

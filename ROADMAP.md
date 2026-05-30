@@ -118,15 +118,15 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 
 ### Phase 9: Engineering hardening & correctness (from 2026-05-30 audit)
 
-> These are concrete defects and gaps found in a code/output audit. They are cheap, high-confidence fixes that protect the accuracy work — worth doing before piling on more features. See ISSUES.md #31–#37.
+> These were concrete defects and gaps found in a code/output audit. All ISSUES.md #31–#37 are now resolved as of 2026-05-30. Remaining items are lower-priority hardening.
 
-- [ ] **Fix editor Step 6 (ISSUES.md #31)** — Step 6 never runs because it reconstructs the SRT filename without the `_preprocessed` infix. Reuse `primary_output` from `transcribe_audio()` instead of rebuilding the path.
-- [ ] **Fix comparison config keys (ISSUES.md #32)** — `compare.py` reads `min_agreement_threshold` / `low_confidence_threshold` that don't exist in `config.yaml` (which has `min_agreement_score`, and puts `low_confidence_threshold` under `transcription`). Thresholds silently fall back to defaults. Align the keys and add a test asserting a non-default YAML value reaches the comparer.
-- [ ] **Cache models across files in batch (ISSUES.md #33)** — load the WhisperX, wav2vec2 alignment, and pyannote models once per run and reuse them; today every file reloads multi-GB models, dominating batch runtime.
-- [ ] **Sync version (ISSUES.md #34)** — bump `pyproject.toml` (0.1.7) to match `CHANGELOG.md` (0.1.13) and add a release checklist / single source of truth.
-- [ ] **Make normalization opt-in & preserve raw output (ISSUES.md #35)** — verbatim model output is currently overwritten in place by heuristic punctuation/capitalization. Add `--normalize` (default off for verbatim), always keep the raw model text, and treat normalization as a suggestion layer.
-- [ ] **Privacy & data handling (ISSUES.md #36)** — remove real personal names from committed source (`NORWEGIAN_PROPER_NOUNS`); load proper-noun/vocabulary lists from a gitignored local data file. Document a data-retention policy and consider optional at-rest encryption and a `--redact` mode.
-- [ ] **Clean up `--diarize` flag (ISSUES.md #37)** — it's a no-op redundant with the default-on behavior; either make diarization opt-in or drop the redundant flag.
+- [x] **Fix editor Step 6 (ISSUES.md #31)** — Step 6 now reuses `primary_output` from `transcribe_audio()` instead of rebuilding the path.
+- [x] **Fix comparison config keys (ISSUES.md #32)** — `TranscriptionComparer` now reads `min_agreement_score` from the `comparison` block and `low_confidence_threshold` from the `transcription` block.
+- [x] **Cache models across files in batch (ISSUES.md #33)** — added module-level model cache in `transcribe.py` (`_model_cache` for WhisperX, `_align_model_cache` for wav2vec2). Models loaded once per run.
+- [x] **Sync version (ISSUES.md #34)** — bumped `pyproject.toml` to `0.1.14` to match `CHANGELOG.md`.
+- [x] **Make normalization opt-in & preserve raw output (ISSUES.md #35)** — added `--normalize` CLI flag (default off). Raw verbatim output saved as `*_raw.srt` when enabled.
+- [x] **Privacy & data handling (ISSUES.md #36)** — removed real personal names from committed source. Added `load_proper_nouns()` that loads from gitignored `data/proper_nouns.json`. Added `data/` to `.gitignore`.
+- [x] **Clean up `--diarize` flag (ISSUES.md #37)** — made diarization opt-in (`default=False`). Removed redundant `--no-diarize` flag.
 - [ ] **Integration test on a tiny real/synthetic clip** — covers the orchestrator glue (currently untested): the path-building, config wiring, normalization, and confidence steps that unit tests don't touch.
 - [ ] **Unit tests for the newest modules** — `normalize.py`, `vocabulary.py`, `spell_check.py`, `database.py`, `editor.py` have no tests; they are also where the most recent churn is.
 - [ ] **CLI `--num-speakers 2` convenience** — lock 2-party telephone calls to two speakers (config already supports `num_speakers_override`; surface it on the CLI).
@@ -350,7 +350,7 @@ Real pipeline execution on `testdata/Call recording Elida Anna Wiktoria Kristian
 - Ingen CI-pipeline — over-scope for personlig verktøy
 - **Dialektgjenkjenning (PRIORITET):** Se Phase 8 for detaljert oversikt. Grunnleggende nordnorsk støtte er implementert (dialekt-flagg i `normalize.py`, dialekt-adaptiv vokabularinjeksjon i `vocabulary.py` via `--dialect northern_norwegian`). Gjenstående: dialekt-konfidensskåring, dialekt-bevarende output, utvidet vokabular, auto-deteksjon av dialektregion, multi-dialekt-støtte, og finjustert modell.
 - **Spell-checking:** Featuren er deaktivert inntil en norsk ordbok lastes inn (ISSUES.md #21 er løst — honest failure — men selve funksjonaliteten krever fortsatt ekstern ordbok)
-- **HF gated repo access:** `pyannote/speaker-diarization-3.1` krever eksplisitt aksept på huggingface.co. Token validerer, men brukeren er ikke i autorisert liste. Bruk `--no-diarize` inntil tilgang er gitt.
+- **HF gated repo access:** `pyannote/speaker-diarization-3.1` krever eksplisitt aksept på huggingface.co. Token validerer, men brukeren er ikke i autorisert liste. Bruk `--diarize` eksplisitt når tilgang er gitt.
 
 ## Near-term priorities (revidert 2026-05-30)
 
@@ -359,7 +359,7 @@ See the **Milestones toward 98% confidence / 2% WER** section above for the stru
 1. **M1 — Calibrated confidence + fasit baseline** (2–4h). Create ground-truth transcripts for 3 files from the test sample. Measure actual WER. Calibrate confidence scores. This is the single highest-ROI action — without a fasit, all other accuracy work is blind.
 2. **M2 — Dialect-aware confidence + vocabulary expansion** (8–16h). Expand dialect vocabulary, add dialect confidence scoring, implement `--preserve-dialect`, fix model caching.
 3. **M3 — Prompt engineering + domain vocabulary** (16–24h). Build domain vocabulary, optimize prompts, run full 410-file test set.
-4. **Phase 9 engineering hardening** — fix ISSUES.md #31–#37 (editor step 6, config keys, model caching, version sync, normalization opt-in, privacy, diarize flag cleanup). These are cheap, high-confidence fixes that protect accuracy work.
+4. **Phase 9 remaining items** — integration test on a tiny clip, unit tests for newest modules, CLI `--num-speakers 2` convenience flag.
 
 ### Utsettes / droppes (over-scope for personlig verktøy)
 - Web-editor (#8) — Subtitle Edit dekker behovet

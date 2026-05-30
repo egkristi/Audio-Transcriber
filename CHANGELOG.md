@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.15] - 2026-05-30
+
+### Fixed
+- **#31 — Editor Step 6 SRT filename mismatch** — Step 6 now reuses the actual output path from `transcribe_audio()` (`primary_output`) instead of reconstructing the filename, which was missing the `_preprocessed` infix.
+- **#32 — compare.py config key mismatch** — `TranscriptionComparer` now reads `min_agreement_score` from the `comparison` config block and `low_confidence_threshold` from the `transcription` block, matching `config.yaml` structure.
+- **#34 — pyproject.toml version drift** — bumped from `0.1.7` to `0.1.14` to match `CHANGELOG.md`.
+- **#37 — `--diarize` flag cleanup** — made diarization opt-in (`default=False`). Removed redundant `--no-diarize` flag. `--diarize` now explicitly enables it.
+
+### Changed
+- **#35 — Normalization opt-in** — Norwegian text normalization is now opt-in via `--normalize` CLI flag (default off). Raw verbatim output is preserved as `*_raw.srt` when normalization is enabled. This protects the verbatim model output from heuristic punctuation/capitalization errors.
+- **#33 — Model caching across files** — added module-level model cache in `transcribe.py` (`_model_cache` for WhisperX, `_align_model_cache` for wav2vec2). Models are loaded once per run and reused across files in batch mode, eliminating the dominant batch runtime cost.
+- **#36 — Privacy: real names removed from source** — `NORWEGIAN_PROPER_NOUNS` in `normalize.py` now contains only place names and public entities. Added `load_proper_nouns()` function that loads personal names from a local gitignored data file (`data/proper_nouns.json`). Added `data/` to `.gitignore`.
+
 ## [0.1.14] - 2026-05-30
 
 ### Added

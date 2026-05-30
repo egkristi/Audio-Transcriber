@@ -16,6 +16,12 @@ from .utils import get_logger, save_json
 
 logger = get_logger("transcribe")
 
+# Module-level model cache for batch processing (#33)
+# Keyed by model_name, so the same model is reused across files
+_model_cache: Dict[str, 'Transcriber'] = {}
+# Alignment model cache: keyed by "{language}_{device}"
+_align_model_cache: Dict[str, Tuple] = {}
+
 
 @dataclass
 class WordTimestamp:
@@ -207,11 +213,18 @@ class Transcriber:
         elif language == "nn":
             align_language = "nn"  # NbAiLab/nb-wav2vec2-1b-nynorsk
         
-        logger.info(f"Loading alignment model for language: {align_language}")
-        align_model, align_metadata = whisperx.load_align_model(
-            language_code=align_language,
-            device=device,
-        )
+        # Cache alignment model at module level (#33)
+        global _align_model_cache
+        align_cache_key = f"{align_language}_{device}"
+        if align_cache_key not in _align_model_cache:
+            logger.info(f"Loading alignment model for language: {align_language}")
+            _align_model_cache[align_cache_key] = whisperx.load_align_model(
+                language_code=align_language,
+                device=device,
+            )
+        else:
+            logger.debug(f"Reusing cached alignment model for: {align_language}")
+        align_model, align_metadata = _align_model_cache[align_cache_key]
         
         logger.debug("Running standalone alignment")
         aligned_result = whisperx.align(
@@ -397,7 +410,11 @@ def transcribe_audio(
     if config is None:
         config = {}
     
-    transcriber = Transcriber(model_name, config)
+    # Use module-level model cache for batch processing (#33)
+    global _model_cache
+    if model_name not in _model_cache:
+        _model_cache[model_name] = Transcriber(model_name, config)
+    transcriber = _model_cache[model_name]
     
     # Get transcription config
     word_timestamps = config.get("word_timestamps", True)

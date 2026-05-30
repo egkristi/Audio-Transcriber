@@ -74,3 +74,6 @@ testdata/output_test/
 output_test/
 output/
 testdata/
+
+# Local data files (personal names, private vocabulary)
+data/

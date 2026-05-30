@@ -44,8 +44,12 @@ class TranscriptionComparer:
     def __init__(self, config: Optional[dict] = None):
         """Initialize comparer with config."""
         self.config = config or {}
-        self.low_confidence_threshold = self.config.get("low_confidence_threshold", 0.85)
-        self.agreement_threshold = self.config.get("min_agreement_threshold", 0.95)
+        # Read from comparison block; fall back to transcription block for low_confidence_threshold
+        # Config keys: comparison.min_agreement_score, transcription.low_confidence_threshold (#32)
+        comparison_block = self.config.get("comparison", {})
+        transcription_block = self.config.get("transcription", {})
+        self.agreement_threshold = comparison_block.get("min_agreement_score", 0.95)
+        self.low_confidence_threshold = transcription_block.get("low_confidence_threshold", 0.85)
     
     def align_segments(
         self,
