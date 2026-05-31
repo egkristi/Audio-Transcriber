@@ -77,10 +77,12 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 - [x] **VAD chunk_size control at model-load time** — added `vad_options` dict with configurable `chunk_size` to `whisperx.load_model()` in `src/transcribe.py:_load_model()`. Config key: `transcription.vad_options.chunk_size` in `config.yaml`. (ISSUES.md #44)
   - **v6 (chunk_size=15, onset=0.500, offset=0.363): 62.95% WER** — beats the v1 baseline (68.79%) by 5.84pp. Optimal chunk_size confirmed as 15.
   - **v9 (chunk_size=15, onset=0.300, offset=0.400): 47.84% WER** — VAD onset/offset tuning reduced deletions by 87% (998→128). Lower onset catches more speech. Trade-off: insertions increased (252→733). Overall WER improved by **15.83pp** vs v6.
-  - **v10 (v9 + hallucination filter): 71.21% WER** — hallucination filter added to reduce insertions. Insertions dropped 83% (733→122) but deletions skyrocketed (128→1224). The filter removed 0 segments — the deletion increase is from model non-determinism, not the filter. See ISSUES.md #44 and #45.
+  - **v10 (v9 + hallucination filter): 71.21% WER** — hallucination filter added to reduce insertions. Insertions dropped 83% (733→122) but deletions skyrocketed (128→1224). The filter removed 0 segments — the deletion increase was initially attributed to model non-determinism. See ISSUES.md #44 and #45.
+  - **v11 (temperature=0.0, filter disabled): 72.81% WER** — tested the non-determinism hypothesis. Result: nearly identical to v10 (1724 vs 1538 hyp words). **Temperature non-determinism hypothesis DISPROVEN.** The v9→v10 regression was NOT from temperature variation.
+  - **v12 (v0.1.32 — config nesting bug fix):** First run where our asr_options are actually applied to whisperx. Uses `temperatures=[0.0]` (greedy decoding), `beam_size=10`, `repetition_penalty=1.2`, `no_repeat_ngram_size=3`, `condition_on_previous_text=True`, and `vad_options` correctly applied. Results TBD.
   - **v7 (chunk_size=25 + hotwords): 91.28% WER** — hotwords severely degraded quality. **Hotwords are NOT recommended for production use.**
   - **v8 (chunk_size=25, no hotwords): 70.6% WER** — chunk_size=25 worse than 15. **Confirmed: chunk_size=15 is optimal.**
-  - **Next:** Investigate model non-determinism (ISSUES.md #45). Run v11 with temperature=0.0 to test reproducibility. If WER stabilizes, the non-determinism hypothesis is confirmed and the fix is greedy decoding.
+  - **Next:** Run v12 with all asr_options correctly applied. This is the first run where our config actually takes effect. Results may differ significantly from all previous runs.
 - [x] **Disable post-processing split by default** — `_split_long_segments()` with `max_segment_duration: 15` INCREASED WER significantly in testing. Post-processing split is now opt-in only (default `max_segment_duration=0`), with a clear warning that it may degrade accuracy.
 - [x] **Fix alignment model coverage (ISSUES.md #42)** — `_align_with_whisperx()` previously returned word-level scores for only 18% of segments due to a rounding mismatch in the merge logic. Replaced exact `round(start, 2)` lookup with fuzzy time-window matching (50ms tolerance). Also fixed `confidence.py` to extract `"score"` fields from `seg["words"]` directly (not just from the `aligned_word_segments` parameter, which was always `None`). Now all segments that the wav2vec2 model can align get acoustic confidence scores.
 - [x] **Hotwords support for faster-whisper (ISSUES.md #41, #43)** — added `hotwords` passthrough via `asr_options` to `whisperx.load_model()`. The pipeline now generates hotwords from vocabulary (proper nouns + dialect words) and passes them to the decoder. Configurable via `config.yaml` `transcription.hotwords` or `vocabulary.use_hotwords`.
@@ -355,17 +357,17 @@ First-ever WER measurement against a real ground-truth transcript. Pipeline run 
 
 #### WER comparison across all runs
 
-| Metric | v1 (chunk=30) | v2 (split) | v3 (no split) | v4 (chunk=10) | v5 (chunk=20) | **v6 (chunk=15)** | v7 (chunk=25+hotwords) | **v8 (chunk=25, no hotwords)** | **v9 (onset=0.300)** | **v10 (v9 + filter)** |
-|--------|:------------:|:---------:|:------------:|:-------------:|:-------------:|:----------------:|:---------------------:|:----------------------------:|:--------------------:|:---------------------:|
-| **WER** | **68.79%** | **89.47%** | **85.94%** | **70.25%** | **71.35%** | **62.95%** | **91.28%** | **70.6%** | **47.84%** | **71.21%** |
-| Hyp words | 2,415 | 3,362 | 3,159 | 1,615 | 1,682 | **2,173** | 555 | 1,791 | 3,245 | 1,538 |
-| Hits | 1,105 | 1,063 | 1,057 | 942 | 939 | **1,270** | 246 | 1,022 | 2,110 | 882 |
-| Substitutions | 561 | 1,532 | 1,440 | 567 | 609 | **674** | 308 | 573 | 402 | 534 |
-| Deletions | 1,144 | 215 | 313 | 1,301 | 1,262 | **866** | 2,256 | 1,215 | 128 | 1,224 |
-| Insertions | 228 | 767 | 662 | 106 | 134 | **229** | 1 | 196 | 733 | 122 |
-| Segments | — | — | 109 | 55 | — | **55** | — | 55 | 55 | 55 |
+| Metric | v1 (chunk=30) | v2 (split) | v3 (no split) | v4 (chunk=10) | v5 (chunk=20) | **v6 (chunk=15)** | v7 (chunk=25+hotwords) | **v8 (chunk=25, no hotwords)** | **v9 (onset=0.300)** | **v10 (v9 + filter)** | **v11 (temp=0.0)** |
+|--------|:------------:|:---------:|:------------:|:-------------:|:-------------:|:----------------:|:---------------------:|:----------------------------:|:--------------------:|:---------------------:|:------------------:|
+| **WER** | **68.79%** | **89.47%** | **85.94%** | **70.25%** | **71.35%** | **62.95%** | **91.28%** | **70.6%** | **47.84%** | **71.21%** | **72.81%** |
+| Hyp words | 2,415 | 3,362 | 3,159 | 1,615 | 1,682 | **2,173** | 555 | 1,791 | 3,245 | 1,538 | 1,724 |
+| Hits | 1,105 | 1,063 | 1,057 | 942 | 939 | **1,270** | 246 | 1,022 | 2,110 | 882 | 1,002 |
+| Substitutions | 561 | 1,532 | 1,440 | 567 | 609 | **674** | 308 | 573 | 402 | 534 | 550 |
+| Deletions | 1,144 | 215 | 313 | 1,301 | 1,262 | **866** | 2,256 | 1,215 | 128 | 1,224 | 1,258 |
+| Insertions | 228 | 767 | 662 | 106 | 134 | **229** | 1 | 196 | 733 | 122 | 172 |
+| Segments | — | — | 109 | 55 | — | **55** | — | 55 | 55 | 55 | 55 |
 
-**Key insight:** v9 (onset=0.300) is the best run at 47.84% WER — deletions dropped 87% vs v6. v10 (same config + hallucination filter) regressed to 71.21% WER due to model non-determinism (52% fewer hypothesis words). The hallucination filter removed 0 segments. See ISSUES.md #44 and #45.
+**Key insight:** v9 (onset=0.300) is the best run at 47.84% WER — deletions dropped 87% vs v6. v10 and v11 regressed to ~72% WER. **Root cause discovered in v0.1.32:** ALL asr_options were silently ignored due to a config nesting bug (#45). whisperx used its defaults (temperature fallback [0.0,0.2,0.4,0.6,0.8,1.0], beam_size=5, repetition_penalty=1, no_repeat_ngram_size=0, condition_on_previous_text=False) for every run. The v9→v10 regression was caused by CTranslate2 multi-threaded non-determinism interacting with temperature fallback, not by code/config changes. v12 will be the first run with our config actually applied. See ISSUES.md #44 and #45.
 
 **Key insight:** chunk_size=15 (v6) is the best tested value at **62.95% WER** — beats the v1 baseline (68.79%) by **5.84pp**. chunk_size=25 without hotwords (v8) gives 70.6% WER — worse than chunk_size=15 by 7.65pp. chunk_size=25 + hotwords (v7) caused catastrophic degradation (91.28%). **The optimal chunk_size is confirmed at 15. No further chunk_size tuning needed.** Next improvement avenues: vad_onset/vad_offset tuning, model fine-tuning, or post-processing.
 

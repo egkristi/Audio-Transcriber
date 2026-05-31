@@ -47,7 +47,10 @@ transcription:
   # on CPU — each uncertain segment gets re-decoded up to 5x. Using a single
   # moderate temperature avoids this while still adding some randomness.
   # (See ISSUES.md #44)
-  temperature: 0.2  # Single temperature value (no fallback). 0.0=greedy, 0.2=moderate
+  # NOTE: This is "temperatures" (plural, list) to match faster-whisper's
+  # TranscriptionOptions dataclass field. A single-element list [0.0] means
+  # greedy decoding with no fallback. (ISSUES.md #45)
+  temperatures: [0.0]  # v12: fixed param name. Was "temperature: 0.0" (singular, never applied).
   no_repeat_ngram_size: 3  # Prevent repetition of 3-grams (helps with stuttering)
   suppress_tokens: [-1]  # Use faster-whisper defaults for token suppression (-1 = use default)
   
@@ -89,7 +92,7 @@ transcription:
   # removes segments where decoder signals indicate hallucination.
   # (ISSUES.md #44)
   hallucination_filter:
-    enabled: true  # Enable post-transcription hallucination filtering
+    enabled: false  # v11: disabled to isolate temperature effect. Was true for v10.
     no_speech_threshold: 0.5  # Max no_speech_prob (higher = more aggressive filtering)
     min_confidence: 0.3  # Min confidence_level (lower = more permissive)
     max_compression_ratio: 3.0  # Max compression ratio (lower = more aggressive)

@@ -134,46 +134,68 @@ class Transcriber:
             
             # CTranslate2 (under faster-whisper/WhisperX) does NOT support MPS.
             # Only CUDA is supported for GPU; fallback to CPU.
+            # BUG FIX (v0.1.32): compute_type is nested under "performance" in config.
+            perf_config = self.config.get("performance", {})
             if torch.cuda.is_available():
                 device = "cuda"
-                compute_type = self.config.get("compute_type", "float16")
+                compute_type = perf_config.get("compute_type", "float16")
             else:
                 device = "cpu"
-                compute_type = self.config.get("compute_type", "int8")
+                compute_type = perf_config.get("compute_type", "int8")
             
             logger.info(f"Using device: {device} (compute_type={compute_type})")
             
-            # Build asr_options from config for faster-whisper decoding parameters
+            # Build asr_options from config for faster-whisper decoding parameters.
+            #
+            # BUG FIX (v0.1.32): The config is the TOP-LEVEL config dict with keys
+            # like "transcription", "preprocessing", etc. All whisper decoding params
+            # are nested under self.config["transcription"]. Previously the code
+            # checked self.config directly (e.g. "beam_size" in self.config), which
+            # ALWAYS returned False — meaning NONE of our asr_options were ever applied.
+            # whisperx has been using its defaults (beam_size=5, temperatures=[0.0,0.2,0.4,0.6,0.8,1.0],
+            # repetition_penalty=1, no_repeat_ngram_size=0, condition_on_previous_text=False).
+            # (See ISSUES.md #45)
+            tc = self.config.get("transcription", {})
             asr_options = {}
-            if "beam_size" in self.config:
-                asr_options["beam_size"] = self.config["beam_size"]
-            if "condition_on_previous_text" in self.config:
-                asr_options["condition_on_previous_text"] = self.config["condition_on_previous_text"]
+            if "beam_size" in tc:
+                asr_options["beam_size"] = tc["beam_size"]
+            if "condition_on_previous_text" in tc:
+                asr_options["condition_on_previous_text"] = tc["condition_on_previous_text"]
+            # initial_prompt may be at top level (set by run_pipeline.py from vocabulary)
+            # or nested under "transcription" in config
             if "initial_prompt" in self.config:
                 asr_options["initial_prompt"] = self.config["initial_prompt"]
-            if "best_of" in self.config:
-                asr_options["best_of"] = self.config["best_of"]
-            if "patience" in self.config:
-                asr_options["patience"] = self.config["patience"]
-            if "length_penalty" in self.config:
-                asr_options["length_penalty"] = self.config["length_penalty"]
+            elif "initial_prompt" in tc:
+                asr_options["initial_prompt"] = tc["initial_prompt"]
+            if "best_of" in tc:
+                asr_options["best_of"] = tc["best_of"]
+            if "patience" in tc:
+                asr_options["patience"] = tc["patience"]
+            if "length_penalty" in tc:
+                asr_options["length_penalty"] = tc["length_penalty"]
+            # hotwords may be at top level (set by run_pipeline.py from vocabulary)
+            # or nested under "transcription" in config
             if "hotwords" in self.config:
                 asr_options["hotwords"] = self.config["hotwords"]
-            if "repetition_penalty" in self.config:
-                asr_options["repetition_penalty"] = self.config["repetition_penalty"]
-            if "no_repeat_ngram_size" in self.config:
-                asr_options["no_repeat_ngram_size"] = self.config["no_repeat_ngram_size"]
-            if "temperature" in self.config:
-                asr_options["temperature"] = self.config["temperature"]
-            if "temperature_increment_on_fallback" in self.config:
-                asr_options["temperature_increment_on_fallback"] = self.config["temperature_increment_on_fallback"]
-            if "max_temperature" in self.config:
-                asr_options["max_temperature"] = self.config["max_temperature"]
-            # Suppress common hallucination tokens (silence, non-speech tokens)
-            # faster-whisper already has sensible defaults, but we can add extra
-            # suppression for Norwegian-specific artifacts
-            if "suppress_tokens" in self.config:
-                asr_options["suppress_tokens"] = self.config["suppress_tokens"]
+            elif "hotwords" in tc:
+                asr_options["hotwords"] = tc["hotwords"]
+            if "repetition_penalty" in tc:
+                asr_options["repetition_penalty"] = tc["repetition_penalty"]
+            if "no_repeat_ngram_size" in tc:
+                asr_options["no_repeat_ngram_size"] = tc["no_repeat_ngram_size"]
+            # BUG FIX (v0.1.32): faster-whisper's TranscriptionOptions uses
+            # "temperatures" (plural, a list) not "temperature" (singular).
+            # whisperx passes asr_options as **kwargs to TranscriptionOptions,
+            # so "temperature" (singular) causes a TypeError. We must use
+            # "temperatures" (plural, list) to match the dataclass field.
+            # (See ISSUES.md #45)
+            if "temperatures" in tc:
+                asr_options["temperatures"] = tc["temperatures"]
+            elif "temperature" in tc:
+                # Convert singular float to plural list for whisperx compatibility
+                asr_options["temperatures"] = [tc["temperature"]]
+            if "suppress_tokens" in tc:
+                asr_options["suppress_tokens"] = tc["suppress_tokens"]
             
             load_kwargs = {
                 "device": device,
@@ -194,7 +216,8 @@ class Transcriber:
             # Default chunk_size=30s causes stuttering in conversational speech.
             # Configurable via config.yaml transcription.vad_options.chunk_size.
             # (See ISSUES.md #40, #44)
-            vad_options = self.config.get("vad_options", None)
+            # BUG FIX (v0.1.32): vad_options is nested under "transcription" in config.
+            vad_options = tc.get("vad_options", None)
             if vad_options is not None:
                 load_kwargs["vad_options"] = vad_options
                 logger.info(f"Using vad_options: {vad_options}")
@@ -642,8 +665,11 @@ def transcribe_audio(
     transcriber = _model_cache[model_name]
     
     # Get transcription config
-    word_timestamps = config.get("word_timestamps", True)
-    language = config.get("language", "no")
+    # BUG FIX (v0.1.32): word_timestamps, language, and hallucination_filter are
+    # nested under "transcription" in config.yaml, not at the top level.
+    tc = config.get("transcription", {})
+    word_timestamps = tc.get("word_timestamps", True)
+    language = tc.get("language", "no")
     
     logger.info(f"Starting transcription: {file_path.name}")
     
@@ -659,7 +685,7 @@ def transcribe_audio(
     # false-positive segments on background noise/breathing. This filter removes
     # segments that are likely hallucinations based on decoder signals.
     # (ISSUES.md #44)
-    hallucination_filter = config.get("hallucination_filter", {})
+    hallucination_filter = tc.get("hallucination_filter", {})
     if hallucination_filter.get("enabled", True):
         filter_kwargs = {
             "no_speech_threshold": hallucination_filter.get("no_speech_threshold", 0.5),
@@ -675,7 +701,7 @@ def transcribe_audio(
     # The real fix is VAD chunk_size at model-load time (see vad_options above).
     # Only enable if you understand the tradeoff. Set max_segment_duration=0 to skip.
     # (See ISSUES.md #40, #44)
-    max_segment_duration = config.get("max_segment_duration", 0)
+    max_segment_duration = tc.get("max_segment_duration", 0)
     if max_segment_duration and max_segment_duration > 0:
         logger.warning(
             f"Post-processing segment split enabled (max_duration={max_segment_duration}s). "

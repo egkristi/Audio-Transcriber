@@ -305,34 +305,39 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 ## Resolved
 
 - #1, #2, #3, #4, #5, #6, #7, #9, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29, #30, #31, #32, #33, #34, #35, #36, #37, #39, #40, #41, #42, #43
+- #45 — Config nesting bug: ALL asr_options silently ignored since project inception
 - See individual issue entries above for details.
 
 ## Open
 
 - **#8** — `editor.py` web editor (parked; Subtitle Edit covers the need)
-- **#44** — VAD onset/offset tuning: v9 (onset=0.300, offset=0.400) achieves 47.84% WER (vs 63.67% v6 baseline). Deletions reduced 87% (998→128). Next: reduce insertions (733) which are now the dominant error mode.
-- **#45** — Model non-determinism: v10 produced 52% fewer words than v9 with identical config
+- **#44** — VAD onset/offset tuning: v9 (onset=0.300, offset=0.400) achieves 47.84% WER (vs 63.67% v6 baseline). Deletions reduced 87% (998→128). Next: reduce insertions (733) which are now the dominant error mode. v12 will be the first run with asr_options correctly applied.
 
-### #45 — Model non-determinism: v10 produced 52% fewer words than v9 with identical config
-- **File:** `src/transcribe.py`
-- **Status:** Open
+### #45 — Config nesting bug: ALL asr_options silently ignored since project inception
+- **File:** `src/transcribe.py`, `config.yaml`
+- **Status:** **Resolved (v0.1.32)**
 - **Priority:** Critical
-- **Description:** v10 (same VAD config as v9: onset=0.300, offset=0.400, chunk_size=15) produced only 1538 hypothesis words vs 3245 in v9 — a **52% reduction**. Both runs used the same model, same audio file, same config. The only difference was the addition of the hallucination filter (which removed 0 segments).
-- **Evidence:**
-  - v9: 3245 hyp words, 128 deletions, 733 insertions, 47.84% WER
-  - v10: 1538 hyp words, 1224 deletions, 122 insertions, 71.21% WER
-  - Both have 109 raw segments, 55 normalized segments
-  - Hallucination filter removed 0 segments (no log messages)
-  - The model itself produced shorter output in v10 — this is upstream of the filter
-- **Root cause hypothesis:** temperature=0.2 introduces sampling variation. The model's output can vary significantly between runs, especially for conversational speech with many short segments. The VAD with onset=0.300 produces many short segments, and each segment's transcription is independently sampled.
-- **Impact:** WER results are not reproducible. A "good" run (v9) and a "bad" run (v10) can differ by 23pp WER. This makes optimization difficult — improvements may be noise, not signal.
-- **Potential fixes:**
-  1. **Set temperature=0.0** — greedy decoding eliminates sampling variation. Risk: more repetitions/stuttering. On CPU, no fallback penalty since we use a single temperature value.
-  2. **Run multiple passes and vote** — transcribe N times with temperature>0, use majority voting to select the best transcription. Very expensive on CPU.
-  3. **Increase beam_size further** — larger beam (e.g., 15-20) may reduce variance by exploring more of the search space. Trade-off: slower decoding.
-  4. **Use VAD with fewer, longer segments** — higher onset threshold (e.g., 0.500) produces fewer segments with more context, reducing per-segment variance.
-- **Next step:** Run v11 with temperature=0.0 to test reproducibility. If WER stabilizes, the non-determinism hypothesis is confirmed.
-- **Discovered during:** v10 post-pipeline analysis (2026-05-31).
+- **Description:** The `Transcriber._load_model()` method read whisper decoding parameters (`beam_size`, `temperature`, `repetition_penalty`, `no_repeat_ngram_size`, `condition_on_previous_text`, etc.) from `self.config` — the TOP-LEVEL config dict. However, all these parameters are nested under `transcription` in `config.yaml`. Every `if "beam_size" in self.config` check returned `False`, so **NONE of our asr_options were ever applied**. whisperx used its hardcoded defaults for every run.
+- **Impact:**
+  - `beam_size: 10` in config → whisperx used default **5**
+  - `repetition_penalty: 1.2` → whisperx used default **1.0** (no penalty)
+  - `no_repeat_ngram_size: 3` → whisperx used default **0** (no n-gram blocking)
+  - `condition_on_previous_text: true` → whisperx used default **False**
+  - `temperature: 0.2` → **never applied** (also had singular/plural bug)
+  - `vad_options` (chunk_size, onset, offset) → **never applied** to whisperx
+  - `compute_type` → read from top level, but it's under `performance` — fell back to hardcoded default
+- **Why the regression (v9→v10) was a red herring:** The v9→v10 regression was NOT caused by code/config changes. It was caused by CTranslate2 multi-threaded CPU non-determinism combined with the fact that whisperx was using temperature fallback `[0.0, 0.2, 0.4, 0.6, 0.8, 1.0]` (the default, since our `temperature` setting was never applied). Temperature fallback means each segment can be decoded up to 6 times with increasing temperature, and the best result is selected. This introduces significant run-to-run variation due to:
+    1. Thread scheduling differences in CTranslate2's parallel inference
+    2. Floating-point non-determinism in the temperature fallback selection logic
+    3. The "best of 6" selection can pick different transcriptions on different runs
+- **Fix (v0.1.32):**
+  1. Changed all config lookups to read from `self.config.get("transcription", {})` instead of `self.config` directly
+  2. Fixed `temperature` → `temperatures` (plural, list) to match faster-whisper's `TranscriptionOptions` dataclass
+  3. Fixed `compute_type` to read from `self.config.get("performance", {})`
+  4. Fixed `vad_options` to read from transcription sub-block
+  5. Fixed `hallucination_filter`, `word_timestamps`, `language`, `max_segment_duration` in `transcribe_audio()` to read from transcription sub-block
+  6. Updated `config.yaml` to use `temperatures: [0.0]` (plural, list) instead of `temperature: 0.0` (singular)
+- **Discovered during:** v11 post-pipeline root cause analysis (2026-06-01).
 
 ### #44 — VAD chunk_size & onset/offset tuning: v9 (onset=0.300, offset=0.400) achieves 47.84% WER
 - **File:** `src/transcribe.py`, `config.yaml`
@@ -353,18 +358,14 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
   | Insertions | 252 | 733 | 122 | **-611** |
   | Segments | 55 | 55 | 55 | 0 |
 
-- **v10 Analysis (hallucination filter):**
-  - **Insertions reduced 83%** (733 → 122) — the hallucination filter successfully targets the dominant error mode from v9. 🎉
-  - **However, WER increased to 71.21%** because deletions skyrocketed (128 → 1224). The hypothesis word count dropped from 3245 to 1538 — the model produced far fewer words.
-  - **The hallucination filter removed 0 segments** — the conservative thresholds (no_speech_prob > 0.5, confidence < 0.3, compression_ratio > 3.0) did not trigger on any of the 109 raw segments. The deletion increase is NOT from the filter.
-  - **Root cause of deletion increase:** The v10 run produced fundamentally different output from v9 despite identical VAD config. The model generated shorter segments with less content. This may be due to:
-    1. **Model non-determinism** — temperature=0.2 introduces sampling variation between runs
-    2. **VAD boundary sensitivity** — slight differences in VAD segment boundaries can cause the model to produce very different transcriptions for conversational speech
-    3. **Alignment model interaction** — only 27/55 segments had word-level scores, suggesting alignment failures that may affect downstream processing
-  - **Key insight:** The hallucination filter works correctly (0 false positives removed) but the thresholds are too conservative to catch the actual hallucinations. The filter needs either:
-    - Lower thresholds (e.g., no_speech_prob > 0.3, confidence < 0.5)
-    - Cross-segment repetition detection (e.g., "hallo"×7 across segment boundaries)
-    - Or the insertion problem needs a different approach entirely
+- **v10/v11 Analysis (post-#45 bug discovery):**
+  - **The v9→v10 regression was a RED HERRING.** The root cause was #45 — ALL asr_options were silently ignored. whisperx used its defaults: `temperatures=[0.0, 0.2, 0.4, 0.6, 0.8, 1.0]` (temperature fallback with 6 passes). Temperature fallback introduces significant run-to-run variation because:
+    1. CTranslate2 multi-threaded CPU inference has floating-point non-determinism
+    2. The "best of 6" selection can pick different transcriptions on different runs
+    3. Thread scheduling differences affect which temperature pass "wins"
+  - **v11 (temperature=0.0, filter disabled) confirmed this:** v11 produced 1724 hyp words — nearly identical to v10's 1538 (both ~50% of v9's 3245). The temperature non-determinism hypothesis was DISPROVEN — the variation is NOT from temperature.
+  - **The real fix (#45):** All asr_options are now correctly passed to whisperx. v12 will use `temperatures=[0.0]` (greedy decoding, no fallback), `beam_size=10`, `repetition_penalty=1.2`, `no_repeat_ngram_size=3`, `condition_on_previous_text=True`, and `vad_options` correctly applied.
+  - **Hallucination filter:** Removed 0 segments in v10. Thresholds too conservative. Needs tuning or replacement with cross-segment repetition detection.
 
 - **v9 Analysis (onset=0.300):**
   - **VAD onset=0.300 (lower) catches much more speech:** deletions dropped from 998 to 128 — an **87% reduction**. The model now captures nearly all spoken words.
@@ -375,8 +376,8 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
   - **Alignment model loading is very slow on CPU:** The 1B-parameter `NbAiLab/nb-wav2vec2-1b-bokmaal-v2` model takes ~12 minutes to load on CPU (M1 Mac). A 300m version exists (`NbAiLab/nb-wav2vec2-300m-bokmaal-v2`) that would load ~3x faster.
   - **Temperature fallback is impractical on CPU:** Using `temperature=0.0` with `temperature_increment_on_fallback=0.2` causes 6x decoding passes (3+ hours). Fixed by using a single `temperature=0.2` value.
 
-- **Next improvement avenues (updated for v10):**
-  1. **Model non-determinism** — run v9 config again (without hallucination filter) to verify v9 results are reproducible. If v9 was a "lucky" run, the insertion problem may be intermittent.
+- **Next improvement avenues (updated for v12):**
+  1. **Run v12 with all asr_options correctly applied** — this is the first run where our config actually takes effect. Results may differ significantly from all previous runs.
   2. **Cross-segment repetition detection** — the hallucination filter currently checks each segment independently. Add detection of repeated words across adjacent segments (e.g., "hallo"×7 spanning segments 1-2).
   3. **Adaptive threshold tuning** — instead of fixed thresholds, use statistical outlier detection on the segment population to identify hallucinations.
   4. **Reduce substitutions** — 402 substitutions remain. Dialect normalization (Bokmål bias) and name/number errors are the main causes.

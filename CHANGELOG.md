@@ -10,6 +10,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Phase 11: Fully automated pipeline** — new ROADMAP.md phase for auto-detecting language and dialect per file, then optimizing models, VAD parameters, decoding parameters, and normalization rules accordingly. Covers: language detection with confidence-based routing, dialect auto-detection from text markers, per-language model routing, per-dialect VAD/decoding profiles, graceful fallback chain, batch-mode optimization, CLI simplification, and detection reporting. (ROADMAP.md)
 
+## [0.1.32] - 2026-06-01
+
+### Fixed
+- **CRITICAL: Config nesting bug (#45)** — `Transcriber._load_model()` read whisper decoding parameters (`beam_size`, `temperature`, `repetition_penalty`, `no_repeat_ngram_size`, `condition_on_previous_text`, etc.) from the top-level config dict, but all these parameters are nested under `transcription` in `config.yaml`. Every `if "beam_size" in self.config` check returned `False`, so **NONE of our asr_options were ever applied** since the project's inception. whisperx used its hardcoded defaults (beam_size=5, temperatures=[0.0,0.2,0.4,0.6,0.8,1.0], repetition_penalty=1, no_repeat_ngram_size=0, condition_on_previous_text=False) for every run. (ISSUES.md #45)
+- **CRITICAL: Temperature parameter name bug (#45)** — Our code set `asr_options["temperature"]` (singular), but faster-whisper's `TranscriptionOptions` dataclass uses `temperatures` (plural, a list). whisperx passes asr_options as `**kwargs` to `TranscriptionOptions()`, so `temperature` (singular) would cause a `TypeError`. Fixed by using `temperatures` (plural, list) to match the dataclass field. (ISSUES.md #45)
+- **Config nesting: `compute_type`** — was read from top-level config, but it's under `performance` in config.yaml. Fixed to read from `self.config.get("performance", {})`.
+- **Config nesting: `vad_options`** — was read from top-level config, but it's under `transcription`. Fixed to read from transcription sub-block.
+- **Config nesting: `hallucination_filter`, `word_timestamps`, `language`, `max_segment_duration`** in `transcribe_audio()` — all were read from top-level config. Fixed to read from `config.get("transcription", {})`.
+- **Config nesting: `device` in `Diarizer.__init__`** — was read from diarization sub-block, but `device` is under `performance` in config.yaml. Minor issue (auto-detect fallback works).
+
+### Changed
+- **config.yaml** — `temperature: 0.0` (singular, float) changed to `temperatures: [0.0]` (plural, list) to match faster-whisper's `TranscriptionOptions` dataclass. This is the first release where our config values are actually applied to whisperx.
+- **ISSUES.md #45** — updated from "Model non-determinism" to "Config nesting bug: ALL asr_options silently ignored". v11 findings (temperature non-determinism hypothesis disproven) documented. Root cause analysis complete.
+- **ISSUES.md #44** — updated with v10/v11 analysis. v9→v10 regression explained as consequence of #45 (temperature fallback non-determinism, not hallucination filter).
+- **pyproject.toml** — version bumped to 0.1.32.
+
+### Removed
+- **Dead code** — `temperature_increment_on_fallback` and `max_temperature` config lookups removed from `_load_model()` (these were never in config.yaml and were never applied).
+
 ## [0.1.31] - 2026-05-31
 
 ### Added

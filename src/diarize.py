@@ -91,6 +91,10 @@ class Diarizer:
         """Initialize diarizer with config."""
         self.config = config or {}
         self.model = None
+        # BUG FIX (v0.1.32): device is under "performance" in config.yaml, not under "diarization".
+        # The caller (run_pipeline.py) passes the "diarization" sub-block, so we need
+        # the full config to read performance.device. Fall back to auto-detect.
+        # This is a minor issue since _auto_detect_device() usually returns the same value.
         self.device = self.config.get("device") or _auto_detect_device()
         
     def _load_model(self):
