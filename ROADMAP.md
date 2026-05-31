@@ -153,7 +153,101 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 - [ ] **Bokmål + Nynorsk alignment routing** — already partially present (`nb-wav2vec2-1b-bokmaal` vs `-nynorsk`); make the written-standard target selectable per file/segment.
 - [ ] **Dialect WER tracking** — once fasits exist, report WER per dialect so we can see which dialects the base model handles well vs. poorly and target effort accordingly.
 
-### Phase 11: Nordic languages (long-term vision)
+### Phase 11: Fully automated pipeline — language & dialect auto-detection with per-file optimization
+
+> **Why this is a priority:** The pipeline currently requires manual flags (`--dialect northern_norwegian`, `--language no`) and a single config for all files. For a tool that processes batches of recordings — potentially in different languages and dialects — this is a bottleneck. The goal is a fully automated pipeline that detects language and dialect per file, then optimizes every pipeline step accordingly, with zero manual configuration.
+
+#### Core concept
+The pipeline should:
+1. **Detect language** per file (already partially done in `analyze.py` via faster-whisper tiny, but always falls back to `"no"`)
+2. **Detect dialect** per file (from transcribed text markers — already prototyped in Phase 8)
+3. **Select optimal model** per language (transcription model, alignment model, vocabulary)
+4. **Select optimal VAD parameters** per dialect/language (onset/offset tuning may differ)
+5. **Select optimal decoding parameters** per dialect (beam_size, temperature, repetition_penalty)
+6. **Route to the right normalization rules** per language/dialect
+7. **Fall back gracefully** when detection is uncertain
+
+#### Implementation plan
+
+- [ ] **Language auto-detection with confidence-based routing** — enhance `analyze.py`'s existing faster-whisper language detection:
+  - If confidence > 0.8: use detected language with high confidence
+  - If confidence 0.5–0.8: use detected language but flag for review
+  - If confidence < 0.5: fall back to `"no"` (Norwegian) — current behavior
+  - Store detected language + confidence in `AudioMetadata` for downstream use
+  - Remove the hardcoded `language="no"` fallback in `transcribe.py` and route dynamically
+
+- [ ] **Dialect auto-detection from transcribed text** — build on the existing Phase 8 dialect region detection:
+  - Run a lightweight first-pass transcription (e.g., whisper tiny) on the first 30s of audio
+  - Scan transcribed text for dialect markers (word-level patterns per dialect region)
+  - Score each dialect region based on marker frequency
+  - Select the best-matching dialect pack or fall back to generic Norwegian
+  - Cache the dialect selection per file in metadata
+
+- [ ] **Per-language model routing** — create a model registry mapping language codes to:
+  - Transcription model (e.g., `"no"` → `NbAiLab/nb-whisper-large-verbatim`, `"sv"` → `KBLab/kb-whisper-large`)
+  - Alignment model (e.g., `"no"` → `NbAiLab/nb-wav2vec2-1b-bokmaal-v2`, `"sv"` → `KBLab/wav2vec2-large-voxrex-swedish`)
+  - Fallback models for low-resource languages
+  - Configurable via `config.yaml` under a new `models:` section
+
+- [ ] **Per-dialect VAD parameter tuning** — different dialects may benefit from different VAD settings:
+  - Northern Norwegian (fast, staccato speech): lower onset, higher offset (current v9: 0.300/0.400)
+  - Trøndersk (drawn-out vowels): potentially different onset/offset
+  - Vestlandsk (sing-song intonation): potentially different onset/offset
+  - Store per-dialect VAD presets in dialect pack data files
+  - Auto-select VAD preset based on detected dialect
+
+- [ ] **Per-dialect decoding parameter profiles** — different dialects may need different decoding strategies:
+  - Northern Norwegian: current v9 config (beam_size=10, temperature=0.2, repetition_penalty=1.2)
+  - Other dialects: tuned experimentally against fasits
+  - Store as part of dialect pack data
+
+- [ ] **Per-file normalization routing** — route to the correct normalization rules based on detected language + dialect:
+  - Norwegian dialects → `normalize.py` with the matching dialect map
+  - Swedish → Swedish normalization rules (new module or parameterized)
+  - English → minimal normalization (punctuation only)
+  - Generic fallback → basic whitespace/punctuation normalization
+
+- [ ] **Graceful fallback chain** — when detection is uncertain:
+  - Language uncertain (< 0.5 confidence): default to Norwegian, flag for review
+  - Dialect uncertain (no clear markers): use generic Norwegian pack, flag for review
+  - Model unavailable for detected language: log warning, fall back to `openai/whisper-large-v3` (multilingual)
+  - Alignment model unavailable: skip alignment, log warning, proceed without word-level scores
+
+- [ ] **Batch-mode optimization** — when processing a folder:
+  - Run language detection on all files first (fast, tiny model)
+  - Group files by detected language/dialect
+  - Load models once per group (avoids reloading for each file)
+  - Process each group with the optimal config
+
+- [ ] **CLI simplification** — make `--language` and `--dialect` optional overrides rather than required flags:
+  - Default: auto-detect everything
+  - `--language sv` — override language detection (force Swedish)
+  - `--dialect trondersk` — override dialect detection
+  - `--no-auto-detect` — disable auto-detection, use config defaults
+  - Backward-compatible: existing flags continue to work as overrides
+
+- [ ] **Detection report** — export a per-file detection summary:
+  - Detected language + confidence
+  - Detected dialect + confidence (marker counts per dialect)
+  - Selected models and parameters
+  - Any fallbacks triggered
+  - Saved to metadata JSON alongside transcription results
+
+#### Dependencies
+- Phase 10 (pluggable dialect packs) must be completed first — auto-detection needs structured dialect data to select from
+- Phase 11 Nordic languages model registry feeds into the model routing
+- Requires fasits for at least Norwegian dialects to tune per-dialect VAD/decoding parameters
+
+#### Success criteria
+- [ ] Pipeline processes a mixed-language batch (e.g., Norwegian + English files) without any manual flags
+- [ ] Pipeline correctly detects and routes Northern Norwegian vs. Trøndersk vs. Vestlandsk
+- [ ] Per-dialect VAD parameters measurably improve WER over one-size-fits-all config
+- [ ] Detection report accurately reflects what was detected and what was chosen
+- [ ] Fallback chain never crashes — always produces a transcript even with uncertain detection
+
+---
+
+### Phase 12: Nordic languages (long-term vision)
 
 > Vision step 2–3: generalize the language/dialect pack structure, then add Nordic languages one at a time — each gated on its own fasit + WER baseline before it's considered "supported".
 

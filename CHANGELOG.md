@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Phase 11: Fully automated pipeline** — new ROADMAP.md phase for auto-detecting language and dialect per file, then optimizing models, VAD parameters, decoding parameters, and normalization rules accordingly. Covers: language detection with confidence-based routing, dialect auto-detection from text markers, per-language model routing, per-dialect VAD/decoding profiles, graceful fallback chain, batch-mode optimization, CLI simplification, and detection reporting. (ROADMAP.md)
+
 ## [0.1.30] - 2026-05-31
 
 ### Added
