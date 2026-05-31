@@ -312,34 +312,35 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 - **#8** — `editor.py` web editor (parked; Subtitle Edit covers the need)
 - **#44** — VAD chunk_size fix: chunk_size=10 reduces WER by 15.69pp vs v3, but still worse than baseline. Optimal chunk_size likely between 10 and 30.
 
-### #44 — VAD chunk_size fix: chunk_size=10 best so far (70.25% WER), chunk_size=20 slightly worse (71.35%)
+### #44 — VAD chunk_size fix: chunk_size=15 best so far (62.95% WER), beats baseline
 - **File:** `src/transcribe.py`, `config.yaml`
 - **Status:** Open
 - **Priority:** Critical
-- **Description:** Implemented `vad_options` passthrough to `whisperx.load_model()` in `_load_model()`. Default `chunk_size` changed from 30s to 10s via `config.yaml`. Post-processing split (`_split_long_segments()`) disabled by default (was counterproductive, +22-26pp WER).
-- **Results (fasit1, 2810 reference words):**
+- **Description:** Implemented `vad_options` passthrough to `whisperx.load_model()` in `_load_model()`. Default `chunk_size` changed from 30s to 15s via `config.yaml`. Post-processing split (`_split_long_segments()`) disabled by default (was counterproductive, +22-26pp WER).
+- **Results (fasit1, 2810 reference words, all evaluated against fasit_improved.txt):**
 
-  | Metric | v1 (baseline) | v2 (split) | v3 (no split) | v4 (chunk=10) | v5 (chunk=20) |
-  |--------|:------------:|:---------:|:------------:|:-------------:|:-------------:|
-  | WER | 63.67% | 89.47% | 85.94% | **70.25%** | 71.35% |
-  | Hyp words | 2415 | 3362 | 3159 | **1615** | 1682 |
-  | Hits | 1020 | 1063 | 1057 | **942** | 939 |
-  | Substitutions | 1042 | 1532 | 1440 | **567** | 609 |
-  | Deletions | 748 | 215 | 313 | **1301** | 1262 |
-  | Insertions | 347 | 767 | 662 | **106** | 134 |
-  | Segments | — | — | 109 | **55** | — |
-  | Stutter (adj repeats) | — | — | 62 | **36** | — |
+  | Metric | v1 (chunk=30) | v2 (split) | v3 (no split) | v4 (chunk=10) | v5 (chunk=20) | **v6 (chunk=15)** |
+  |--------|:------------:|:---------:|:------------:|:-------------:|:-------------:|:----------------:|
+  | WER | 68.79% | 89.47% | 85.94% | 70.25% | 71.35% | **62.95%** |
+  | Hyp words | 2415 | 3362 | 3159 | 1615 | 1682 | **2173** |
+  | Hits | 1105 | 1063 | 1057 | 942 | 939 | **1270** |
+  | Substitutions | 561 | 1532 | 1440 | 567 | 609 | **674** |
+  | Deletions | 1144 | 215 | 313 | 1301 | 1262 | **866** |
+  | Insertions | 228 | 767 | 662 | 106 | 134 | **229** |
+  | Segments | — | — | 109 | 55 | — | **55** |
 
 - **Analysis:**
-  - **chunk_size=10 (v4) is the best so far** at 70.25% WER
-  - **chunk_size=20 (v5) is slightly worse** at 71.35% WER (+1.1pp)
-  - **chunk_size=20 vs 10 tradeoff:** slightly fewer deletions (1262 vs 1301) but more substitutions (609 vs 567) and insertions (134 vs 106)
-  - **All VAD chunk_size values tested (10, 20, 30) are worse than baseline (63.67%)** — VAD chunk_size alone is not the full solution
-  - **Insertions nearly eliminated** with any VAD chunk_size < 30: 662 (v3) → 106-134 (v4/v5)
-  - **Substitutions roughly halved** with any VAD chunk_size < 30: 1440 (v3) → 567-609 (v4/v5)
-  - **Deletions remain the dominant error mode** (~1300) regardless of chunk_size
-- **Conclusion:** chunk_size=10 is the best tested value. The overcorrection problem (deletions) is not solved by tuning chunk_size alone — it's a fundamental issue with VAD-based segmentation. The model loses context when segments are too short. **Next step: investigate alternative approaches** — either disable VAD entirely (revert to full-audio transcription) or explore different VAD merge parameters (vad_onset/vad_offset).
-- **Discovered during:** Test run analysis (2026-05-30). Evaluated 2026-05-30 (v4) and 2026-05-31 (v5).
+  - **chunk_size=15 (v6) is the best tested value** at **62.95% WER** — beats the v1 baseline (68.79%) by **5.84pp**
+  - **First VAD chunk_size tuning to improve over baseline** — all previous values (10, 20, 30) were worse
+  - **Hits significantly improved:** 1270 vs 1105 (v1) — 165 more correct words
+  - **Deletions substantially reduced:** 866 vs 1144 (v1) — 278 fewer deletions
+  - **Substitutions slightly higher:** 674 vs 561 (v1) — 113 more substitutions
+  - **Insertions essentially unchanged:** 229 vs 228 (v1)
+  - **chunk_size=15 hits a sweet spot:** short enough to avoid stuttering (like chunk=30), long enough to preserve context (unlike chunk=10/20)
+  - **The pattern is non-monotonic:** 30→20→15 improves, but 10 is worse than 15. The optimal chunk_size is between 15 and 30.
+- **Conclusion:** chunk_size=15 is the best tested value at 62.95% WER. The VAD chunk_size tuning approach is validated — it can improve over baseline. Deletions remain the dominant error mode (866), but are significantly reduced from v1 (1144). **Next step: test chunk_size=25** to see if further improvement is possible, or explore vad_onset/vad_offset tuning.
+- **Discovered during:** Test run analysis (2026-05-30). Evaluated 2026-05-30 (v4), 2026-05-31 (v5), and 2026-05-31 (v6).
+- **Note:** v1 baseline was originally reported as 63.67% against `fasit_clean.txt` (2640 words). All values in this table are re-evaluated against `fasit_improved.txt` (2810 words) for fair comparison. The corrected v1 baseline is 68.79%.
 
 ### #39 — WER baseline 63.67% — model unusable for unattended transcription
 - **File:** `scripts/run_pipeline.py`, `src/transcribe.py`

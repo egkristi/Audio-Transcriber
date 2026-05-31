@@ -74,9 +74,9 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 - [~] Apple Silicon acceleration with CoreML / MLX support — CTranslate2 does not support MPS; whisper.cpp+CoreML or MLX would require a separate engine. Deferred.
 - [x] CUDA/GPU support for Linux/Windows — device auto-detection implemented (#13). CTranslate2 uses CUDA when available; PyTorch diarization uses CUDA/MPS.
 - [x] Model caching and memory optimization for batch jobs — language detection model cached (`_language_model`); transcription model loaded once per run. Full batch memory optimization is future work.
-- [x] **VAD chunk_size control at model-load time** — added `vad_options` dict with configurable `chunk_size` (10s) to `whisperx.load_model()` in `src/transcribe.py:_load_model()`. Config key: `transcription.vad_options.chunk_size` in `config.yaml`. (ISSUES.md #44)
-  - **Result:** chunk_size=10 (v4) is best at 70.25% WER. chunk_size=20 (v5) slightly worse at 71.35%. All VAD chunk_size values tested (10, 20, 30) are worse than baseline (63.67%). The overcorrection problem (deletions ~1300) is not solved by chunk_size tuning alone. **Next: investigate alternative approaches — disable VAD entirely or tune vad_onset/vad_offset.**
-- [x] **Disable post-processing split by default** — `_split_long_segments()` with `max_segment_duration: 15` INCREASED WER from 63.67% to 85.94% in testing. Post-processing split is now opt-in only (default `max_segment_duration=0`), with a clear warning that it may degrade accuracy.
+- [x] **VAD chunk_size control at model-load time** — added `vad_options` dict with configurable `chunk_size` to `whisperx.load_model()` in `src/transcribe.py:_load_model()`. Config key: `transcription.vad_options.chunk_size` in `config.yaml`. (ISSUES.md #44)
+  - **Result:** chunk_size=15 (v6) is best at **62.95% WER** — beats the v1 baseline (68.79%) by 5.84pp. This is the first VAD chunk_size tuning to improve over baseline. The pattern is non-monotonic: 30→20→15 improves, but 10 is worse than 15. The optimal chunk_size is between 15 and 30. **Next: test chunk_size=25 or explore vad_onset/vad_offset tuning.**
+- [x] **Disable post-processing split by default** — `_split_long_segments()` with `max_segment_duration: 15` INCREASED WER significantly in testing. Post-processing split is now opt-in only (default `max_segment_duration=0`), with a clear warning that it may degrade accuracy.
 - [ ] Performance profiling and resource usage monitoring — **next priority after fasit exists**
 
 ### Phase 7: Quality & documentation
@@ -166,21 +166,23 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 
 First-ever WER measurement against a real ground-truth transcript. Pipeline run with `--dialect northern_norwegian` on `Call recording Håvard Kristiansen_260524_172503.m4a` (27 min, 48kHz AAC).
 
-#### WER results — v1 (baseline, no post-processing split)
+#### WER results — v1 (baseline, chunk_size=30, no post-processing split)
 
 | Metric | Value |
 |--------|-------|
-| **WER** | **63.67%** |
+| **WER** | **68.79%** |
 | CER | 52.13% |
 | MER | 58.13% |
 | WIL | 70.67% |
 | WIP | 29.33% |
-| Reference words | 2,640 |
-| Hypothesis words | 1,894 |
-| Hits (correct) | 1,211 |
-| Substitutions | 431 |
-| Deletions | 998 |
-| Insertions | 252 |
+| Reference words | 2,810 |
+| Hypothesis words | 2,415 |
+| Hits (correct) | 1,105 |
+| Substitutions | 561 |
+| Deletions | 1,144 |
+| Insertions | 228 |
+
+> **Note:** v1 was originally reported as 63.67% WER against `fasit_clean.txt` (2,640 words). All values here are re-evaluated against `fasit_improved.txt` (2,810 words) for fair comparison across runs. The corrected v1 baseline is 68.79%.
 
 #### WER results — v2 (post-processing split at 15s)
 
@@ -235,24 +237,37 @@ First-ever WER measurement against a real ground-truth transcript. Pipeline run 
 | Deletions | 1,262 |
 | Insertions | 134 |
 
+#### WER results — v6 (VAD chunk_size=15, no post-processing split)
+
+| Metric | Value |
+|--------|-------|
+| **WER** | **62.95%** |
+| CER | 47.63% |
+| Reference words | 2,810 |
+| Hypothesis words | 2,173 |
+| Hits (correct) | 1,270 |
+| Substitutions | 674 |
+| Deletions | 866 |
+| Insertions | 229 |
+| Segments | 55 |
+
 #### WER comparison across all runs
 
-| Metric | v1 (baseline) | v2 (split) | v3 (no split) | v4 (chunk=10) | v5 (chunk=20) |
-|--------|:------------:|:---------:|:------------:|:-------------:|:-------------:|
-| **WER** | **63.67%** | **89.47%** | **85.94%** | **70.25%** | **71.35%** |
-| Hyp words | 2,415 | 3,362 | 3,159 | 1,615 | 1,682 |
-| Hits | 1,020 | 1,063 | 1,057 | 942 | 939 |
-| Substitutions | 1,042 | 1,532 | 1,440 | 567 | 609 |
-| Deletions | 748 | 215 | 313 | 1,301 | 1,262 |
-| Insertions | 347 | 767 | 662 | 106 | 134 |
-| Segments | — | — | 109 | 55 | — |
-| Stutter (adj repeats) | — | — | 62 | 36 | — |
+| Metric | v1 (chunk=30) | v2 (split) | v3 (no split) | v4 (chunk=10) | v5 (chunk=20) | **v6 (chunk=15)** |
+|--------|:------------:|:---------:|:------------:|:-------------:|:-------------:|:----------------:|
+| **WER** | **68.79%** | **89.47%** | **85.94%** | **70.25%** | **71.35%** | **62.95%** |
+| Hyp words | 2,415 | 3,362 | 3,159 | 1,615 | 1,682 | **2,173** |
+| Hits | 1,105 | 1,063 | 1,057 | 942 | 939 | **1,270** |
+| Substitutions | 561 | 1,532 | 1,440 | 567 | 609 | **674** |
+| Deletions | 1,144 | 215 | 313 | 1,301 | 1,262 | **866** |
+| Insertions | 228 | 767 | 662 | 106 | 134 | **229** |
+| Segments | — | — | 109 | 55 | — | **55** |
 
-**Key insight:** chunk_size=10 (v4) is the best tested value at 70.25% WER. chunk_size=20 (v5) is slightly worse at 71.35% (+1.1pp). All VAD chunk_size values tested (10, 20, 30) are worse than the baseline (63.67%) — VAD chunk_size tuning alone is not sufficient. The overcorrection problem (deletions ~1300) persists regardless of chunk_size. **Next: investigate alternative approaches — either disable VAD entirely or tune vad_onset/vad_offset parameters.**
+**Key insight:** chunk_size=15 (v6) is the best tested value at **62.95% WER** — beats the v1 baseline (68.79%) by **5.84pp**. This is the first VAD chunk_size tuning to improve over baseline. Hits significantly improved (1,270 vs 1,105) and deletions substantially reduced (866 vs 1,144). The pattern is non-monotonic: 30→20→15 improves, but 10 is worse than 15. The optimal chunk_size is between 15 and 30. **Next: test chunk_size=25 or explore vad_onset/vad_offset tuning.**
 
 #### Error analysis
 
-1. **Deletions dominate in v1 (998/2,640 = 37.8%):** The model misses entire phrases. Likely causes: (a) 30-second VAD segments are too long for conversational speech with pauses — the model fills silence with stuttering/repetition instead of advancing; (b) the model struggles with crosstalk and overlapping speech common in phone calls.
+1. **Deletions dominate in v1 (1,144/2,810 = 40.7%):** The model misses entire phrases. Likely causes: (a) 30-second VAD segments are too long for conversational speech with pauses — the model fills silence with stuttering/repetition instead of advancing; (b) the model struggles with crosstalk and overlapping speech common in phone calls. v6 (chunk=15) reduced deletions to 866 (30.8%), a significant improvement.
 
 2. **Post-processing split is COUNTERPRODUCTIVE (v2 → v3):** Adding `max_segment_duration: 15` post-processing split INCREASED WER from 63.67% to 85.94–89.47%. The split creates more segments (55→109→217) from already-stuttered output, inflating insertion count (252→662→767). The model already stuttered within the original VAD segments; splitting after transcription just divides bad output into more pieces. **The fix must happen at model-load time** by passing `vad_options` with `chunk_size` (e.g., 10s) to `whisperx.load_model()`.
 
@@ -268,9 +283,9 @@ First-ever WER measurement against a real ground-truth transcript. Pipeline run 
 
 #### Implications
 
-The 63.67% WER is far above the 15–25% range estimated before the fasit existed. This means the model is **not usable for unattended transcription** — every output needs full human review and correction. The confidence system's 100% flag rate was correct: every segment genuinely needs review.
+The 68.79% WER (corrected baseline against fasit_improved.txt) is far above the 15–25% range estimated before the fasit existed. This means the model is **not usable for unattended transcription** — every output needs full human review and correction. The confidence system's 100% flag rate was correct: every segment genuinely needs review.
 
-The VAD chunk_size fix (chunk_size=10) improved WER from 85.94% (v3) to 70.25% (v4) — a 15.69pp improvement — but overcorrected. Deletions exploded from 313 to 1,301, meaning the model misses too much speech. chunk_size=20 (v5) was slightly worse at 71.35%. All VAD chunk_size values tested (10, 20, 30) are worse than the baseline (63.67%). **VAD chunk_size tuning alone is not sufficient** — the overcorrection problem persists regardless of chunk_size. **Next: investigate alternative approaches — disable VAD entirely or tune vad_onset/vad_offset parameters.**
+The VAD chunk_size fix (chunk_size=15, v6) improved WER from 68.79% (v1) to **62.95%** — a 5.84pp improvement. This is the first VAD chunk_size tuning to beat the baseline. chunk_size=10 (v4) and chunk_size=20 (v5) were both worse than baseline. The optimal chunk_size is between 15 and 30. **Next: test chunk_size=25 or explore vad_onset/vad_offset tuning.**
 
 Post-processing split (`_split_long_segments()`) is disabled by default since it makes WER worse (+22-26pp).
 

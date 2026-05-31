@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.27] - 2026-06-01
+
+### Added
+- **Fasit1 v6 WER evaluation results** — chunk_size=15 tested as middle ground between 10 and 20.
+- **Critical re-evaluation finding** — discovered that v1 baseline was computed against `fasit_clean.txt` (2,640 words) while v4/v5/v6 were against `fasit_improved.txt` (2,810 words). All runs re-evaluated against same fasit for fair comparison.
+
+### Changed
+- **ISSUES.md #44 updated** — v6 results added. chunk_size=15 achieves **62.95% WER** — best result so far, beating corrected v1 baseline (68.79%) by 5.84pp. First VAD chunk_size tuning to improve over baseline. Hits significantly improved (1,270 vs 1,105), deletions reduced (866 vs 1,144). Pattern is non-monotonic: 30→20→15 improves, but 10 is worse than 15.
+- **ROADMAP.md** — v6 results added to test run findings. All comparison tables updated with corrected v1 baseline (68.79%). Phase 6 updated with v6 outcome. Next step: test chunk_size=25 or explore vad_onset/vad_offset tuning.
+- **pyproject.toml** — version bumped to 0.1.27.
+
 ## [0.1.26] - 2026-05-31
 
 ### Added

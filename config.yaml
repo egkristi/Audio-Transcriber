@@ -57,7 +57,7 @@ transcription:
   # speech. Setting chunk_size=10 produces shorter VAD-merged segments that
   # reduce stuttering at the source. (See ISSUES.md #40, #44)
   vad_options:
-    chunk_size: 20  # Seconds. Lower = shorter segments, less stuttering
+    chunk_size: 15  # Seconds. Lower = shorter segments, less stuttering
     vad_onset: 0.500  # VAD activation threshold
     vad_offset: 0.363  # VAD deactivation threshold
   
