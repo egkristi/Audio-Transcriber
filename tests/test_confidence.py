@@ -163,12 +163,12 @@ class TestHardRules:
         """3+ identical consecutive words = hallucination flag."""
         segments = [
             SegmentConfidence(
-                segment_id=0, start=0.0, end=2.0, text="dette er er er veldig",
+                segment_id=0, start=0.0, end=2.0, text="dette kake kake kake veldig",
             ),
         ]
         extractor = ConfidenceExtractor()
         results = extractor.compute_priority(segments)
-        assert "repeated_words" in results[0].flags
+        assert any(f.startswith("repeated_words") for f in results[0].flags)
 
     def test_english_words_flagged(self):
         """Common English words in Norwegian text = language confusion."""

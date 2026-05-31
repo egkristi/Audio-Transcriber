@@ -10,6 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Phase 11: Fully automated pipeline** — new ROADMAP.md phase for auto-detecting language and dialect per file, then optimizing models, VAD parameters, decoding parameters, and normalization rules accordingly. Covers: language detection with confidence-based routing, dialect auto-detection from text markers, per-language model routing, per-dialect VAD/decoding profiles, graceful fallback chain, batch-mode optimization, CLI simplification, and detection reporting. (ROADMAP.md)
 
+### Changed
+- **Confidence hard-rules now discriminate effectively** — three key fixes:
+  1. **Filler word exclusion**: `repeated_words` rule now excludes common Norwegian filler/function words ("ja", "nei", "da", "jo", "vel", "er", "det", "den", etc.). Previously fired on 98% of segments because "ja" appears 3+ times in conversational speech.
+  2. **Dialect normalization threshold raised**: Common function words ("jeg", "ikke", "hva", "hvor", etc.) excluded from dialect-standard counting. Previously fired on 98% of segments because "jeg" appears in almost every segment.
+  3. **Word count threshold raised**: `very_many_words` threshold increased from 50 to 80 words (tuned for 30-second VAD chunks).
+  4. **Novelty bonus**: Segments with rare flags (<20% of segments) get +0.1 priority boost; uncommon flags (<40%) get +0.05. Prevents common flags from dominating the score.
+- **Cross-segment repetition detection** — new third pass in `compute_priority()` that counts word frequency across ALL segments. If a word appears 5+ times across 3+ segments, the segments with highest density get a priority boost (0.15-0.30). Catches hallucination patterns like "svært" ×30 across segment 5 in v15 that per-segment checks miss.
+- **Confidence validation against fasit** — comprehensive analysis confirmed Spearman ρ = 0.012 (p = 0.93) between priority_score and actual per-segment WER. The old hard-rules had zero discriminatory power. The fixes above address the root cause: all segments were flagged with the same common flags, producing uniform priority scores (range 0.31-0.56).
+
+### Fixed
+- **Confidence test `test_repeated_words_flagged`** — updated to use non-filler word ("kake") after filler word exclusion was added. Assertion updated to use `startswith("repeated_words")` to match new flag format with word suffix.
+
 ## [0.1.36] - 2026-06-01
 
 ### Added

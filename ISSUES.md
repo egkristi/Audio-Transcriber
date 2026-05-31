@@ -306,12 +306,42 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 
 - #1, #2, #3, #4, #5, #6, #7, #9, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29, #30, #31, #32, #33, #34, #35, #36, #37, #39, #40, #41, #42, #43
 - #45 — Config nesting bug: ALL asr_options silently ignored since project inception
+- #46 — Confidence priority scores have zero correlation with actual WER (fixes applied in v0.1.37)
 - See individual issue entries above for details.
 
 ## Open
 
 - **#8** — `editor.py` web editor (parked; Subtitle Edit covers the need)
 - **#44** — VAD onset/offset tuning: v9 (onset=0.300, offset=0.400) achieves 47.84% WER (vs 63.67% v6 baseline). Deletions reduced 87% (998→128). v12 (first run with asr_options correctly applied) achieved 86.89% WER — worst result. Root cause: `condition_on_previous_text=True` causes repetition looping. Next: v13 with `condition_on_previous_text=False`, revert to whisperx defaults.
+- **#46** — Confidence priority scores have zero correlation with actual WER
+
+### #46 — Confidence priority scores have zero correlation with actual WER
+- **File:** `src/confidence.py`
+- **Status:** Open
+- **Priority:** High
+- **Description:** Comprehensive validation against v9 fasit data (55 segments, 2631 reference words) revealed that the confidence priority scoring system has **no discriminatory power**. Spearman correlation between priority_score and per-segment WER: ρ = 0.0122 (p = 0.929). Precision@5 = 0% (none of the top-5 by priority are in the top-5 by WER).
+
+- **Root cause analysis:**
+  1. **Uniform flag distribution**: 4 flags fire on 95%+ of segments: `repeated_words` (98%), `dialect_normalized` (98%), `low_logprob` (95%), `repeated_phrases` (95%). Since every segment gets the same flags, the unweighted average produces nearly identical priority scores (range: 0.31-0.56, mean: 0.48).
+  2. **Filler words trigger repetition**: "ja" appears 3+ times in almost every conversational segment, triggering `repeated_words` on 54/55 segments.
+  3. **Common function words trigger dialect normalization**: "jeg" appears in almost every segment, and the dialect-standard pair ("jeg"→"æ") counts toward the ≥2 threshold.
+  4. **Logprob threshold too aggressive**: -0.5 catches 95% of segments in conversational speech.
+  5. **Word count threshold too low**: 50 words is common for 30-second segments.
+
+- **Fixes applied (v0.1.37):**
+  1. **Filler word exclusion**: `repeated_words` now excludes common Norwegian filler/function words ("ja", "nei", "da", "jo", "vel", "er", "det", "den", etc.). Only significant content words trigger the flag.
+  2. **Dialect normalization refined**: Common function words ("jeg", "ikke", "hva", "hvor", etc.) excluded from dialect-standard counting. Only content-word dialect pairs count toward the threshold.
+  3. **Word count threshold raised**: `very_many_words` threshold increased from 50 to 80 words.
+  4. **Novelty bonus**: Segments with rare flags (<20% of segments) get +0.1 priority boost; uncommon flags (<40%) get +0.05. This prevents common flags from dominating the score.
+  5. **Cross-segment repetition detection**: New third pass detects words appearing 5+ times across 3+ segments (catches "svært"×30 pattern).
+
+- **Remaining work:**
+  1. **Re-validate after fixes**: Run confidence validation script against v9 data to verify improved Spearman correlation.
+  2. **Phase B: Logistic regression calibration**: Replace unweighted average with logistic regression trained on ground-truth WER data. Requires multiple runs to account for model non-determinism (#45).
+  3. **Add more discriminating signals**: Cross-model disagreement, acoustic features (SNR, VAD overlap), and per-word confidence distributions.
+  4. **False confidence detection**: Identify segments where the model is "confidently wrong" — high decoder confidence but high WER. These are invisible to current signals.
+
+- **Discovered during:** Confidence validation analysis (2026-06-01).
 
 ### #45 — Config nesting bug: ALL asr_options silently ignored since project inception
 - **File:** `src/transcribe.py`, `config.yaml`

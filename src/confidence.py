@@ -21,15 +21,21 @@ linguistically plausible. Therefore: confidence is a supplement, not a
 replacement. Proper nouns and numbers should be reviewed regardless of score.
 
 Norwegian-specific hard-rules (v0.1.5+):
-- Repetition: 3+ repeated words or 2+ repeated phrases = likely hallucination
+- Repetition: 3+ repeated words (excluding filler words like "ja", "nei", "da")
+  or 2+ repeated phrases = likely hallucination
+- Cross-segment repetition: same word appearing 5+ times across 3+ adjacent
+  segments = hallucination pattern (e.g., "svært" ×30 in v15)
 - English words: common English words in Norwegian text = language confusion
 - Duration: segments <2s or >60s = likely segmentation error
 - Character patterns: "aa" not "å", "ae" not "æ", "oe" not "ø" = normalization issue
 - Punctuation: missing spaces after punctuation = formatting error
 - Unusual characters: symbols, emojis, mixed scripts = corruption
 - Dialect-standard mismatch: standard forms where dialect expected = silent normalization
+  (excludes common function words like "jeg", "ikke", "hva" to avoid diluting signal)
 - Mixed dialect register: both dialect and standard forms in same segment = confusion
 - Dialect presence: dialect words detected, flagged for awareness
+- Novelty bonus: segments with rare flags get boosted priority (prevents common
+  flags like repeated_words from dominating the score)
 """
 
 from dataclasses import dataclass, field
@@ -313,22 +319,36 @@ class ConfidenceExtractor:
                 flags.append(f"possible_proper_noun:{proper_noun_count}")
             
             # 11. HARD RULE: Repetition — 3+ identical consecutive words = hallucination
-            # Whisper often gets stuck repeating words when uncertain
+            # Whisper often gets stuck repeating words when uncertain.
+            # Exclude common Norwegian filler/function words that naturally repeat
+            # in conversational speech (e.g., "ja", "nei", "da", "jo", "vel").
             text_lower = seg.text.lower()
             word_list = text_lower.split()
-            for w in set(word_list):
-                if word_list.count(w) >= 3:
-                    scores.append(0.6)
-                    flags.append("repeated_words")
-                    break
-            # Also check for repeated 2-word phrases
+            filler_words = {"ja", "nei", "da", "jo", "vel", "jo", "nå", "så",
+                            "å", "og", "men", "for", "at", "til", "av", "med",
+                            "på", "i", "er", "det", "den", "de", "du", "han",
+                            "hun", "vi", "dere", "man", "sin", "seg", "kan",
+                            "skal", "vil", "må", "har", "hadde", "ble", "blir",
+                            "være", "vært", "bli", "kommer", "går", "sier",
+                            "tror", "vet", "ser", "litt", "bare", "også",
+                            "ikke", "hva", "hvor", "hvordan", "hvorfor",
+                            "når", "hvilken", "hvem", "hvis", "fordi"}
+            significant_repeats = [w for w in set(word_list)
+                                   if w not in filler_words and word_list.count(w) >= 3]
+            if significant_repeats:
+                scores.append(0.6)
+                flags.append(f"repeated_words:{','.join(significant_repeats[:3])}")
+            # Also check for repeated 2-word phrases (excluding filler-only phrases)
             if len(word_list) >= 4:
                 bigrams = [f"{word_list[i]} {word_list[i+1]}" for i in range(len(word_list)-1)]
                 for bg in set(bigrams):
                     if bigrams.count(bg) >= 2:
-                        scores.append(0.5)
-                        flags.append("repeated_phrases")
-                        break
+                        # Check if the bigram is just filler words
+                        bg_words = bg.split()
+                        if not all(w in filler_words for w in bg_words):
+                            scores.append(0.5)
+                            flags.append(f"repeated_phrases:{bg}")
+                            break
             
             # 12. HARD RULE: English words in Norwegian text = language confusion
             # Common English words that Whisper might insert
@@ -360,11 +380,14 @@ class ConfidenceExtractor:
                 flags.append("very_long_segment")
             
             # 14. HARD RULE: Word count heuristics
+            # Thresholds tuned for 30-second segments (typical VAD chunk).
+            # 80+ words in 30s ≈ 160+ wpm — unusually dense speech.
+            # 3- words in 30s ≈ near silence — likely segmentation error.
             word_count = len(words)
             if word_count < 3:
                 scores.append(0.2)
                 flags.append("very_few_words")
-            if word_count > 50:
+            if word_count > 80:
                 scores.append(0.3)
                 flags.append("very_many_words")
             
@@ -440,6 +463,9 @@ class ConfidenceExtractor:
             # decoder confidence but are incorrect for the target dialect.
             # Flag segments where standard forms appear but dialect expected.
             # Dialect-standard pairs: (standard, dialect)
+            # NOTE: "jeg", "ikke", "hva", "hvor", "hvordan", "hvorfor" are excluded
+            # from the count because they appear in almost every conversational
+            # segment and would otherwise fire on 98% of segments (diluting signal).
             dialect_pairs = [
                 ("jeg", "æ"), ("meg", "mæ"), ("deg", "dæ"), ("seg", "sæ"),
                 ("dere", "dokker"), ("ikke", "ikkje"), ("hva", "ka"),
@@ -454,10 +480,17 @@ class ConfidenceExtractor:
                 ("opp", "oppi"), ("ned", "nedi"), ("inn", "inni"),
                 ("bort", "borti"), ("fram", "frami"),
             ]
+            # Common function words that appear in almost every segment — exclude
+            # from dialect counting to avoid diluting the signal.
+            common_function_words = {"jeg", "ikke", "hva", "hvor", "hvordan",
+                                     "hvorfor", "det", "den", "de", "er", "på",
+                                     "til", "av", "med", "for", "at", "og",
+                                     "men", "så", "da", "nå", "jo", "vel"}
             dialect_standard_count = 0
             dialect_expected_forms = []
             for standard, dialect in dialect_pairs:
-                # Check if standard form appears in text
+                if standard in common_function_words:
+                    continue  # Skip common function words that appear everywhere
                 if re.search(r'\b' + re.escape(standard) + r'\b', text_lower):
                     dialect_standard_count += 1
                     dialect_expected_forms.append(f"{standard}→{dialect}")
@@ -506,7 +539,87 @@ class ConfidenceExtractor:
             else:
                 seg.priority_score = 0.0
             
+            # Novelty bonus: boost segments with rare flags (flags that appear
+            # in few other segments). This prevents common flags (repeated_words,
+            # dialect_normalized, low_logprob) from dominating the score and
+            # ensures segments with unique issues get higher priority.
+            # The bonus is proportional to how rare the flag is.
+            # This is computed in a second pass (see compute_priority).
+            
             seg.flags = flags
+        
+        # Second pass: compute flag rarity and apply novelty bonus
+        # Count flag occurrences across all segments
+        flag_segment_counts = {}
+        for seg in segments:
+            seen_bases = set()
+            for flag in seg.flags:
+                base = flag.split(":")[0]
+                if base not in seen_bases:
+                    seen_bases.add(base)
+                    flag_segment_counts[base] = flag_segment_counts.get(base, 0) + 1
+        
+        # Apply novelty bonus: +0.1 for each rare flag (<20% of segments)
+        total_segments = len(segments) if segments else 1
+        for seg in segments:
+            seen_bases = set()
+            novelty_bonus = 0.0
+            for flag in seg.flags:
+                base = flag.split(":")[0]
+                if base not in seen_bases:
+                    seen_bases.add(base)
+                    freq = flag_segment_counts.get(base, 0) / total_segments
+                    if freq < 0.2:  # Rare flag: appears in <20% of segments
+                        novelty_bonus += 0.1
+                    elif freq < 0.4:  # Uncommon flag: appears in <40% of segments
+                        novelty_bonus += 0.05
+            seg.priority_score += novelty_bonus
+        
+        # Third pass: cross-segment repetition detection
+        # Whisper sometimes hallucinates by repeating the same word across multiple
+        # adjacent segments (e.g., "svært" ×30 across segment 5 in v15).
+        # Per-segment repetition check misses this because each segment individually
+        # may only have 1-2 occurrences.
+        # 
+        # Strategy: count word frequency across ALL segments. If a word appears
+        # unusually often (top 1% of word frequencies), flag the segments where
+        # it appears most densely.
+        if len(segments) >= 3:
+            from collections import Counter
+            # Count word occurrences across all segments (excluding filler words)
+            all_words = []
+            for seg in segments:
+                words = seg.text.lower().split()
+                all_words.extend(w for w in words if w not in filler_words and len(w) > 2)
+            
+            word_freq = Counter(all_words)
+            if word_freq:
+                # Find the most repeated word(s) — top 5% of frequency distribution
+                max_freq = max(word_freq.values())
+                threshold = max(3, int(max_freq * 0.3))  # At least 3, or 30% of max
+                
+                for word, freq in word_freq.most_common(3):  # Top 3 most repeated
+                    if freq >= threshold and freq >= 5:  # At least 5 occurrences
+                        # Find which segments contain this word
+                        affected_segments = []
+                        for seg in segments:
+                            seg_words = seg.text.lower().split()
+                            count = seg_words.count(word)
+                            if count >= 1:
+                                affected_segments.append((seg.segment_id, count))
+                        
+                        if len(affected_segments) >= 3:  # Spread across 3+ segments
+                            # Boost priority for segments with highest density
+                            max_density = max(c for _, c in affected_segments)
+                            for seg in segments:
+                                seg_words = seg.text.lower().split()
+                                count = seg_words.count(word)
+                                if count >= 1:
+                                    # Stronger boost for segments with more repetitions
+                                    density_ratio = count / max_density if max_density > 0 else 0
+                                    boost = 0.15 + 0.15 * density_ratio
+                                    seg.priority_score += boost
+                                    seg.flags.append(f"cross_segment_repeat:{word}×{freq}")
         
         # Sort by priority descending
         segments.sort(key=lambda s: s.priority_score, reverse=True)

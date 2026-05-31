@@ -56,10 +56,12 @@ This roadmap reflects the existing implementation, identified gaps from the audi
   - faster-whisper decoder signals: `avg_logprob`, `no_speech_prob`, `compression_ratio`, `temperature`, `word.probability`
   - Cross-model disagreement from `compare.py`
   - Acoustic features from `analyze.py`: SNR, VAD overlap
-  - **20 hard-rules for high-risk content:** numbers, proper nouns, repetition, English words, duration, word count, Norwegian char patterns (aa/ae/oe), formatting, unusual characters, incomplete endings, lowercase starts, excessive fillers
+  - **24 hard-rules for high-risk content:** numbers, proper nouns, repetition (with filler word exclusion), cross-segment repetition detection, English words, duration, word count, Norwegian char patterns (aa/ae/oe), formatting, unusual characters, incomplete endings, lowercase starts, excessive fillers, dialect normalization (with common function word exclusion), mixed dialect register
+  - **Novelty bonus:** segments with rare flags get boosted priority (prevents common flags from dominating)
   - Auto-exports `*_review_list.txt` with ALL segments + `*_review_list.json` with full signal data
   - Priority histogram and flag distribution in review list
-  - Future: calibrate priority scores against ground-truth using logistic regression
+  - **Validated against fasit:** Spearman ρ = 0.012 (p = 0.93) before fixes — hard-rules had zero discriminatory power. Fixes applied in v0.1.37: filler word exclusion, dialect normalization refinement, word count threshold raised, novelty bonus, cross-segment repetition detection.
+  - Future: calibrate priority scores against ground-truth using logistic regression (Phase B)
 - [x] Norwegian spell-checking integration in pipeline (basic integration via `--spell-check`)
   - **Honest limitation:** No Norwegian dictionary is bundled due to licensing. Spell-checking is disabled until a dictionary is provided. See ISSUES.md #21.
 - [x] Automatic `initial_prompt` / vocabulary injection for Whisper (via `--vocabulary-file` or default Norwegian vocabulary)
@@ -91,6 +93,7 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 - [x] **Hotwords support for faster-whisper (ISSUES.md #41, #43)** — added `hotwords` passthrough via `asr_options` to `whisperx.load_model()`. The pipeline now generates hotwords from vocabulary (proper nouns + dialect words) and passes them to the decoder. Configurable via `config.yaml` `transcription.hotwords` or `vocabulary.use_hotwords`.
   - **⚠️ v7 test result: hotwords severely degrade quality.** With chunk_size=25 + hotwords, WER jumped to 91.28% (vs 62.95% for chunk_size=15 without hotwords). The model produced repetitive gibberish and lost most content. Hotwords are retained as an opt-in feature but are NOT recommended for production use with nb-whisper-large-verbatim.
 - [ ] Performance profiling and resource usage monitoring — **next priority after fasit exists**
+- [ ] **Confidence calibration against ground truth** — replace unweighted average priority scoring with logistic regression trained on per-segment WER data. Requires multiple runs to account for model non-determinism (#45). See ISSUES.md #46.
 
 ### Phase 7: Quality & documentation
 - [x] Add unit tests — 146 tests covering `analyze.py`, `preprocess.py`, `compare.py`, `diarize.py`, `normalize.py`, `vocabulary.py`, `confidence.py`, `spell_check.py`, and pipeline orchestrator integration
