@@ -79,7 +79,7 @@ class TestVocabularyManager:
         manager = VocabularyManager()
         manager.add_words(["hei", "på", "deg"])
         prompt = manager.generate_initial_prompt()
-        assert prompt.startswith("Vocabulary:")
+        assert prompt.startswith("The following words are important:")
         assert "hei" in prompt
 
     def test_generate_initial_prompt_respects_max_tokens(self):

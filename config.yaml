@@ -35,32 +35,37 @@ transcription:
   secondary_model: "openai/whisper-large-v3"  # For comparison (Step 4)
   fallback_model: "NbAiLab/nb-whisper-large"  # Grammatically corrected version
   
-  # Whisper settings
-  beam_size: 10
-  best_of: 5
-  patience: 1.0
-  length_penalty: 1.0
-  repetition_penalty: 1.2  # Penalize repetition to reduce stuttering (1.0 = off, >1.0 = penalize)
+  # Whisper settings — v15: minimal config, let whisperx use its defaults.
+  # KEY INSIGHT: The #45 bug meant ALL previous runs used whisperx defaults.
+  # v9 (47.84% WER) used whisperx defaults WITH post-processing split DISABLED
+  # (due to #45 bug, max_segment_duration defaulted to 0). v13 (94.55% WER) used
+  # whisperx defaults WITH post-processing split ENABLED (max_segment_duration=15
+  # now correctly read from config after #45 fix). The split creates duplicate
+  # segments that inflate WER by ~47pp.
+  #
+  # v14 (71.10% WER): single temperature [0.2] (no fallback) + condition_on_previous_text=true.
+  # Result: 1087 fewer words than reference (massive deletion). Single temperature
+  # means no fallback when model is uncertain. condition_on_previous_text=true causes
+  # model to latch onto previous segments, producing shorter output.
+  #
+  # v15: Only set params that DIFFER from whisperx defaults. By NOT setting
+  # temperatures, repetition_penalty, etc., whisperx uses its built-in defaults
+  # (temperatures=[0.0,0.2,0.4,0.6,0.8,1.0], beam_size=5, etc.) — exactly what v9 used.
+  # The only explicit override is max_segment_duration=0 (post-processing split disabled).
+  # This should reproduce v9's 47.84% WER if the split was the only confound.
+  # (ISSUES.md #44, #45)
   
-  # Temperature for decoding — single pass only (no fallback).
-  # Temperature fallback (temperature=0.0 + increment) causes massive slowdown
-  # on CPU — each uncertain segment gets re-decoded up to 5x. Using a single
-  # moderate temperature avoids this while still adding some randomness.
-  # (See ISSUES.md #44)
-  # NOTE: This is "temperatures" (plural, list) to match faster-whisper's
-  # TranscriptionOptions dataclass field. A single-element list [0.0] means
-  # greedy decoding with no fallback. (ISSUES.md #45)
-  temperatures: [0.0]  # v12: fixed param name. Was "temperature: 0.0" (singular, never applied).
-  no_repeat_ngram_size: 3  # Prevent repetition of 3-grams (helps with stuttering)
+  # NOTE: Do NOT set temperatures, beam_size, repetition_penalty, etc. here.
+  # Let whisperx use its defaults. Only set overrides below.
+  
   suppress_tokens: [-1]  # Use faster-whisper defaults for token suppression (-1 = use default)
   
   # Feature flags
   word_timestamps: true  # ALWAYS true for editor synchronization
   vad_filter: true  # Filter silence before transcription
-  condition_on_previous_text: true  # Use context from previous segments
-  max_segment_duration: 15  # Max segment duration in seconds. Longer segments are split to reduce stuttering/repetition. Default 15s (was 30s, see #40).
-  # NOTE: Post-processing split (_split_long_segments) is COUNTERPRODUCTIVE —
-  # it increases WER by dividing already-stuttered output into more pieces.
+  max_segment_duration: 0  # DISABLED — post-processing split is COUNTERPRODUCTIVE.
+  # NOTE: Post-processing split (_split_long_segments) increases WER by dividing
+  # already-stuttered output into more pieces (+22-47pp WER in testing).
   # The real fix is VAD chunk_size at model-load time (see vad_options below).
   # Set to 0 to disable post-processing split entirely.
   language: "no"  # Norwegian

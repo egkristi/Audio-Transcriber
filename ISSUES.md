@@ -311,7 +311,7 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 ## Open
 
 - **#8** — `editor.py` web editor (parked; Subtitle Edit covers the need)
-- **#44** — VAD onset/offset tuning: v9 (onset=0.300, offset=0.400) achieves 47.84% WER (vs 63.67% v6 baseline). Deletions reduced 87% (998→128). Next: reduce insertions (733) which are now the dominant error mode. v12 will be the first run with asr_options correctly applied.
+- **#44** — VAD onset/offset tuning: v9 (onset=0.300, offset=0.400) achieves 47.84% WER (vs 63.67% v6 baseline). Deletions reduced 87% (998→128). v12 (first run with asr_options correctly applied) achieved 86.89% WER — worst result. Root cause: `condition_on_previous_text=True` causes repetition looping. Next: v13 with `condition_on_previous_text=False`, revert to whisperx defaults.
 
 ### #45 — Config nesting bug: ALL asr_options silently ignored since project inception
 - **File:** `src/transcribe.py`, `config.yaml`
@@ -347,16 +347,53 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 
 - **Results (fasit1, all evaluated against fasit_clean.txt for fair comparison with v6):**
 
-  | Metric | v6 (chunk=15, onset=0.500, offset=0.363) | **v9 (chunk=15, onset=0.300, offset=0.400)** | **v10 (v9 + hallucination filter)** | Change (v9→v10) |
-  |--------|:----------------------------------------:|:--------------------------------------------:|:-----------------------------------:|:--------------:|
-  | **WER** | **63.67%** | **47.84%** | **71.21%** | **+23.37pp** |
-  | CER | 52.13% | 37.21% | 58.53% | +21.32pp |
-  | Hyp words | 1894 | 3245 | 1538 | -1707 |
-  | Hits | 1211 | 2110 | 882 | **-1228** |
-  | Substitutions | 431 | 402 | 534 | +132 |
-  | Deletions | 998 | 128 | 1224 | **+1096** |
-  | Insertions | 252 | 733 | 122 | **-611** |
-  | Segments | 55 | 55 | 55 | 0 |
+  | Metric | v6 (chunk=15, onset=0.500, offset=0.363) | **v9 (chunk=15, onset=0.300, offset=0.400)** | **v10 (v9 + hallucination filter)** | **v12 (asr_options fixed: temps=[0.0], beam=10, rep_pen=1.2, no_repeat=3, cond_prev=True)** | **v13 (v12 + max_segment_duration=15 split)** | **v14 (v13 + max_segment_duration=0, temps=[0.2], cond_prev=True)** | **v15 (whisperx defaults: no explicit params)** |
+  |--------|:----------------------------------------:|:--------------------------------------------:|:-----------------------------------:|:------------------------------------------------------------------------------------------:|:---------------------------------------------:|:-----------------------------------------------------------------:|:----------------------------------------------:|
+  | **WER** | **63.67%** | **47.84%** | **71.21%** | **86.89%** | **94.55%** | **71.10%** | **72.83%** |
+  | CER | 52.13% | 37.21% | 58.53% | 72.24% | 88.70% | 59.37% | 60.44% |
+  | Hyp words | 1894 | 3245 | 1538 | 3485 | 3485 | 1553 | 2104 |
+  | Hits | 1211 | 2110 | 882 | 1287 | 1287 | 1036 | 1175 |
+  | Substitutions | 431 | 402 | 534 | 649 | 649 | 517 | 517 |
+  | Deletions | 998 | 128 | 1224 | 704 | 704 | 1087 | 939 |
+  | Insertions | 252 | 733 | 122 | 845 | 845 | 0 | 412 |
+  | Segments | 55 | 55 | 55 | 110 (split) | 110 (split) | 55 | 55 |
+
+- **v15 Analysis (whisperx defaults, no explicit params):**
+  - **WER 72.83% — much worse than v9's 47.84% despite using the same whisperx defaults.** This confirms **model non-determinism** (#45) is a significant factor. The same model with the same parameters produces very different results across runs.
+  - **Hypothesis word count: 2104** (vs v9's 3245). The model produced 527 fewer words than v9, with 939 deletions (vs v9's 128). The transcription is much sparser.
+  - **Severe repetition in some segments:** Segment 5 has "svært" repeated ~30 times. This is the classic whisperx repetition issue when using default temperatures (temperature fallback with greedy first pass).
+  - **Insertions: 412** (vs v9's 733). Fewer insertions but also far fewer correct words (1175 hits vs v9's 2110).
+  - **Transcription time: ~7 min** (vs ~12 min for v9 with explicit temperatures). Removing the explicit `temperatures` param lets whisperx use its efficient C++ implementation.
+  - **Alignment time: ~5.5 min** (wav2vec2 1B model on CPU). 21/55 segments aligned.
+  - **Total pipeline time: ~12.5 min** for a 27-minute audio file.
+  - **Key insight: The v9 result (47.84% WER) was a lucky run.** The model non-determinism (#45) means that whisperx with temperature fallback can produce dramatically different outputs on different runs. v15 proves that the same config does NOT guarantee the same result.
+  - **Implication: WER optimization must account for non-determinism.** Single-run evaluations are unreliable. Each config should be evaluated multiple times and the distribution reported (mean, min, max, stddev).
+  - **Config used:** Only `suppress_tokens=[-1]`, `word_timestamps=true`, `vad_filter=true`, `max_segment_duration=0`. All other whisperx params removed so whisperx uses its C++ defaults (beam_size=5, temperatures=[0.0,0.2,0.4,0.6,0.8,1.0], repetition_penalty=1.0, no_repeat_ngram_size=0, condition_on_previous_text=false).
+
+- **v14 Analysis (single temperature [0.2], condition_on_previous_text=true):**
+  - **WER 71.10% — slightly better than v15 but still far from v9.** The single temperature + conditioning approach reduced insertions to 0 but caused massive deletions (1087).
+  - **Hypothesis word count: 1553** — only 59% of the reference (2640 words). The model is under-generating severely.
+  - **Zero insertions** — the model never adds extra words, but it also misses 41% of the reference.
+  - **Root cause: `condition_on_previous_text=true` causes the model to latch onto previous segments and produce shorter/truncated output.** Combined with single temperature (no fallback), the model has no mechanism to escape local optima.
+  - **Config:** `temperatures=[0.2]` (single, no fallback), `condition_on_previous_text=true`, `max_segment_duration=0`, `beam_size=5`, `repetition_penalty=1.0`, `no_repeat_ngram_size=0`.
+
+- **v13 Analysis (post-#45 fix with max_segment_duration=15 split):**
+  - **WER 94.55% — worst result of any run.** The post-processing split (max_segment_duration=15) created duplicate segments from already-stuttered output, massively inflating WER.
+  - **Root cause: The #45 bug fix meant config was now correctly read.** Previously (v9-v12), `max_segment_duration` was read from the wrong config level and defaulted to 0 (no split). After the fix, it correctly read `max_segment_duration=15` from the transcription config, activating the counterproductive post-processing split.
+  - **Hypothesis word count: 3485** (same as v12) — the split doesn't change word count, just segment distribution.
+  - **Key lesson: Post-processing split is actively harmful.** Confirmed the warning in the code that it increases WER by +22-26pp.
+
+- **v12 Analysis (first run with asr_options correctly applied after #45 fix):**
+  - **WER 86.89% — worst result so far.** The combination of `temperatures=[0.0]` (greedy), `beam_size=10`, `repetition_penalty=1.2`, `no_repeat_ngram_size=3`, and `condition_on_previous_text=True` catastrophically degraded quality.
+  - **Root cause: `condition_on_previous_text=True` causes repetition looping.** The raw SRT shows clear repetition patterns: segments 3 and 4 are identical ("ja ja det var varmt akkurat her på verandaen"), segments 5 and 6 are identical. The model feeds its own output back as context and enters a loop.
+  - **Hypothesis word count exploded to 3485** (vs 2640 reference) — 845 insertions, the highest of any run. The repetition looping inflates word count.
+  - **Hits dropped to 1287** (vs 2110 in v9) — the model is so busy repeating that it misses content.
+  - **Substitutions at 649** (highest of any run) — greedy decoding with beam=10 is picking wrong hypotheses.
+  - **Transcription time: ~20 minutes** (vs ~12 min for v9) — beam_size=10 adds significant CPU overhead.
+  - **Alignment time: ~5.5 minutes** (wav2vec2 1B model on CPU).
+  - **Total pipeline time: ~25 minutes** for a 27-minute audio file.
+  - **Key insight: `condition_on_previous_text=True` is actively harmful for this model/dataset.** The Whisper model's own output contains errors that compound when fed back as context. This is a known Whisper issue — conditioning on previous text can cause looping, especially with greedy decoding.
+  - **The #45 fix revealed that our config choices are worse than whisperx defaults.** The defaults (beam_size=5, no repetition penalty, no conditioning on previous text) actually performed better. Our "improvements" were counterproductive.
 
 - **v10/v11 Analysis (post-#45 bug discovery):**
   - **The v9→v10 regression was a RED HERRING.** The root cause was #45 — ALL asr_options were silently ignored. whisperx used its defaults: `temperatures=[0.0, 0.2, 0.4, 0.6, 0.8, 1.0]` (temperature fallback with 6 passes). Temperature fallback introduces significant run-to-run variation because:
@@ -364,7 +401,7 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
     2. The "best of 6" selection can pick different transcriptions on different runs
     3. Thread scheduling differences affect which temperature pass "wins"
   - **v11 (temperature=0.0, filter disabled) confirmed this:** v11 produced 1724 hyp words — nearly identical to v10's 1538 (both ~50% of v9's 3245). The temperature non-determinism hypothesis was DISPROVEN — the variation is NOT from temperature.
-  - **The real fix (#45):** All asr_options are now correctly passed to whisperx. v12 will use `temperatures=[0.0]` (greedy decoding, no fallback), `beam_size=10`, `repetition_penalty=1.2`, `no_repeat_ngram_size=3`, `condition_on_previous_text=True`, and `vad_options` correctly applied.
+  - **The real fix (#45):** All asr_options are now correctly passed to whisperx. v12 used `temperatures=[0.0]` (greedy decoding, no fallback), `beam_size=10`, `repetition_penalty=1.2`, `no_repeat_ngram_size=3`, `condition_on_previous_text=True`, and `vad_options` correctly applied.
   - **Hallucination filter:** Removed 0 segments in v10. Thresholds too conservative. Needs tuning or replacement with cross-segment repetition detection.
 
 - **v9 Analysis (onset=0.300):**
@@ -376,16 +413,17 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
   - **Alignment model loading is very slow on CPU:** The 1B-parameter `NbAiLab/nb-wav2vec2-1b-bokmaal-v2` model takes ~12 minutes to load on CPU (M1 Mac). A 300m version exists (`NbAiLab/nb-wav2vec2-300m-bokmaal-v2`) that would load ~3x faster.
   - **Temperature fallback is impractical on CPU:** Using `temperature=0.0` with `temperature_increment_on_fallback=0.2` causes 6x decoding passes (3+ hours). Fixed by using a single `temperature=0.2` value.
 
-- **Next improvement avenues (updated for v12):**
-  1. **Run v12 with all asr_options correctly applied** — this is the first run where our config actually takes effect. Results may differ significantly from all previous runs.
-  2. **Cross-segment repetition detection** — the hallucination filter currently checks each segment independently. Add detection of repeated words across adjacent segments (e.g., "hallo"×7 spanning segments 1-2).
+- **Next improvement avenues (updated after v15):**
+  1. **Model non-determinism (#45) must be addressed first.** Single-run WER evaluations are unreliable. Each config should be run multiple times (3-5x) and the distribution reported (mean, min, max, stddev). Without this, we cannot distinguish signal from noise.
+  2. **Cross-segment repetition detection** — the hallucination filter currently checks each segment independently. Add detection of repeated words across adjacent segments (e.g., "svært"×30 in segment 5, "hallo"×7 spanning segments 1-2).
   3. **Adaptive threshold tuning** — instead of fixed thresholds, use statistical outlier detection on the segment population to identify hallucinations.
-  4. **Reduce substitutions** — 402 substitutions remain. Dialect normalization (Bokmål bias) and name/number errors are the main causes.
+  4. **Reduce substitutions** — 402-517 substitutions remain. Dialect normalization (Bokmål bias) and name/number errors are the main causes.
   5. **Model fine-tuning** — fine-tune nb-whisper-large-verbatim on Norwegian conversational speech to reduce both substitutions and insertions.
   6. **Switch to 300m alignment model** — `NbAiLab/nb-wav2vec2-300m-bokmaal-v2` would load ~3x faster on CPU with minimal accuracy loss.
+  7. **Investigate seed setting** — if whisperx/CTranslate2 supports seed setting, this could reduce non-determinism and make evaluations reproducible.
 
-- **Discovered during:** Test run analysis (2026-05-30). v9 evaluated 2026-05-31. v10 evaluated 2026-05-31.
-- **Note:** v6 baseline uses `fasit_clean.txt` (2640 words). v9 and v10 evaluated against same reference for fair comparison. Results against `fasit_improved.txt` (2810 words): v9 raw WER=53.7%, v10 raw WER=74.98%.
+- **Discovered during:** Test run analysis (2026-05-30). v9 evaluated 2026-05-31. v10 evaluated 2026-05-31. v12 evaluated 2026-06-01. v13 evaluated 2026-06-01. v14 evaluated 2026-06-01. v15 evaluated 2026-06-01.
+- **Note:** v6 baseline uses `fasit_clean.txt` (2640 words). v9, v10, and v12 evaluated against same reference for fair comparison. Results against `fasit_improved.txt` (2810 words): v9 raw WER=53.7%, v10 raw WER=74.98%.
 
 ### #39 — WER baseline 63.67% — model unusable for unattended transcription
 - **File:** `scripts/run_pipeline.py`, `src/transcribe.py`

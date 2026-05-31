@@ -10,6 +10,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Phase 11: Fully automated pipeline** — new ROADMAP.md phase for auto-detecting language and dialect per file, then optimizing models, VAD parameters, decoding parameters, and normalization rules accordingly. Covers: language detection with confidence-based routing, dialect auto-detection from text markers, per-language model routing, per-dialect VAD/decoding profiles, graceful fallback chain, batch-mode optimization, CLI simplification, and detection reporting. (ROADMAP.md)
 
+## [0.1.36] - 2026-06-01
+
+### Added
+- **v15 WER evaluation** — pipeline run with whisperx defaults (no explicit params). Config: only `suppress_tokens=[-1]`, `word_timestamps=true`, `vad_filter=true`, `max_segment_duration=0`. All other params removed so whisperx uses C++ defaults (beam_size=5, temperatures=[0.0,0.2,0.4,0.6,0.8,1.0], repetition_penalty=1.0, no_repeat_ngram_size=0, condition_on_previous_text=false).
+- **Critical finding: model non-determinism confirmed (#45).** v15 achieved 72.83% WER vs v9's 47.84% despite using identical whisperx defaults. The same model with the same parameters produces very different results across runs. v9 was a lucky run.
+- **Implication: WER optimization must account for non-determinism.** Single-run evaluations are unreliable. Each config should be evaluated multiple times and the distribution reported.
+
+### Changed
+- **ISSUES.md #44** — updated with v13, v14, v15 results. Comparison table extended with three new columns. Next improvement avenues rewritten: model non-determinism (#45) is now the primary blocker.
+- **ROADMAP.md** — Phase 6 updated with v13, v14, v15 results. Model non-determinism documented as the key finding.
+
+## [0.1.35] - 2026-06-01
+
+### Added
+- **v14 WER evaluation** — pipeline run with single temperature [0.2], condition_on_previous_text=true, max_segment_duration=0. WER 71.10%.
+- **Critical finding: single temperature + condition_on_previous_text causes massive deletions.** Hypothesis word count dropped to 1553 (59% of reference). Zero insertions but 1087 deletions. The model under-generates severely when conditioned on previous text with no temperature fallback.
+
+### Changed
+- **ISSUES.md #44** — updated with v14 results. Root cause documented: condition_on_previous_text=true causes the model to latch onto previous segments and produce shorter output.
+
+## [0.1.34] - 2026-06-01
+
+### Added
+- **v13 WER evaluation** — pipeline run with asr_options correctly applied after #45 fix, plus max_segment_duration=15 post-processing split. WER 94.55% (worst result).
+- **Critical finding: post-processing split is actively harmful.** The #45 bug fix meant max_segment_duration=15 was now correctly read from config, activating the counterproductive split. Confirmed it increases WER by +22-26pp.
+
+### Changed
+- **ISSUES.md #44** — updated with v13 results. Post-processing split confirmed as root cause of v13 catastrophe.
+
+## [0.1.33] - 2026-06-01
+
+### Added
+- **v12 WER evaluation** — first pipeline run with asr_options correctly applied after #45 fix. Config: `temperatures=[0.0]`, `beam_size=10`, `repetition_penalty=1.2`, `no_repeat_ngram_size=3`, `condition_on_previous_text=True`, VAD chunk_size=15, onset=0.300, offset=0.400.
+
+### Changed
+- **ISSUES.md #44** — updated with v12 results. New comparison table column. WER 86.89% (worst result). Root cause identified: `condition_on_previous_text=True` causes repetition looping. Next steps updated: disable `condition_on_previous_text`, revert to whisperx defaults for v13.
+- **ROADMAP.md** — Phase 6 updated with v12 results. WER comparison table extended.
+
+### Fixed
+- **No code changes in v0.1.33** — this is a documentation-only release capturing v12 evaluation results.
+
 ## [0.1.32] - 2026-06-01
 
 ### Fixed
