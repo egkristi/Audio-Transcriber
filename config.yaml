@@ -83,6 +83,18 @@ transcription:
     vad_onset: 0.300  # VAD activation threshold (lower = more sensitive, catches more speech)
     vad_offset: 0.400  # VAD deactivation threshold (higher = keeps segments open longer)
   
+  # Hallucination filter — post-transcription removal of likely false-positive segments.
+  # The v9 VAD config (onset=0.300) catches much more speech but also produces
+  # false-positive segments on background noise, breathing, and silence. This filter
+  # removes segments where decoder signals indicate hallucination.
+  # (ISSUES.md #44)
+  hallucination_filter:
+    enabled: true  # Enable post-transcription hallucination filtering
+    no_speech_threshold: 0.5  # Max no_speech_prob (higher = more aggressive filtering)
+    min_confidence: 0.3  # Min confidence_level (lower = more permissive)
+    max_compression_ratio: 3.0  # Max compression ratio (lower = more aggressive)
+    min_text_length: 1  # Min text characters (filters empty segments)
+  
   # Confidence thresholds — AGGRESSIVE for maximum flagging without ground truth
   low_confidence_threshold: 0.70  # Lower = flag more segments
   confidence_percentile: 25       # Lower = flag more segments

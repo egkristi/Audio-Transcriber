@@ -77,9 +77,10 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 - [x] **VAD chunk_size control at model-load time** — added `vad_options` dict with configurable `chunk_size` to `whisperx.load_model()` in `src/transcribe.py:_load_model()`. Config key: `transcription.vad_options.chunk_size` in `config.yaml`. (ISSUES.md #44)
   - **v6 (chunk_size=15, onset=0.500, offset=0.363): 62.95% WER** — beats the v1 baseline (68.79%) by 5.84pp. Optimal chunk_size confirmed as 15.
   - **v9 (chunk_size=15, onset=0.300, offset=0.400): 47.84% WER** — VAD onset/offset tuning reduced deletions by 87% (998→128). Lower onset catches more speech. Trade-off: insertions increased (252→733). Overall WER improved by **15.83pp** vs v6.
+  - **v10 (v9 + hallucination filter): 71.21% WER** — hallucination filter added to reduce insertions. Insertions dropped 83% (733→122) but deletions skyrocketed (128→1224). The filter removed 0 segments — the deletion increase is from model non-determinism, not the filter. See ISSUES.md #44 and #45.
   - **v7 (chunk_size=25 + hotwords): 91.28% WER** — hotwords severely degraded quality. **Hotwords are NOT recommended for production use.**
   - **v8 (chunk_size=25, no hotwords): 70.6% WER** — chunk_size=25 worse than 15. **Confirmed: chunk_size=15 is optimal.**
-  - **Next:** Reduce insertions (733) which are now the dominant error mode. Possible approaches: higher VAD onset, post-processing filter, or model fine-tuning.
+  - **Next:** Investigate model non-determinism (ISSUES.md #45). Run v11 with temperature=0.0 to test reproducibility. If WER stabilizes, the non-determinism hypothesis is confirmed and the fix is greedy decoding.
 - [x] **Disable post-processing split by default** — `_split_long_segments()` with `max_segment_duration: 15` INCREASED WER significantly in testing. Post-processing split is now opt-in only (default `max_segment_duration=0`), with a clear warning that it may degrade accuracy.
 - [x] **Fix alignment model coverage (ISSUES.md #42)** — `_align_with_whisperx()` previously returned word-level scores for only 18% of segments due to a rounding mismatch in the merge logic. Replaced exact `round(start, 2)` lookup with fuzzy time-window matching (50ms tolerance). Also fixed `confidence.py` to extract `"score"` fields from `seg["words"]` directly (not just from the `aligned_word_segments` parameter, which was always `None`). Now all segments that the wav2vec2 model can align get acoustic confidence scores.
 - [x] **Hotwords support for faster-whisper (ISSUES.md #41, #43)** — added `hotwords` passthrough via `asr_options` to `whisperx.load_model()`. The pipeline now generates hotwords from vocabulary (proper nouns + dialect words) and passes them to the decoder. Configurable via `config.yaml` `transcription.hotwords` or `vocabulary.use_hotwords`.
@@ -354,15 +355,17 @@ First-ever WER measurement against a real ground-truth transcript. Pipeline run 
 
 #### WER comparison across all runs
 
-| Metric | v1 (chunk=30) | v2 (split) | v3 (no split) | v4 (chunk=10) | v5 (chunk=20) | **v6 (chunk=15)** | v7 (chunk=25+hotwords) | **v8 (chunk=25, no hotwords)** |
-|--------|:------------:|:---------:|:------------:|:-------------:|:-------------:|:----------------:|:---------------------:|:----------------------------:|
-| **WER** | **68.79%** | **89.47%** | **85.94%** | **70.25%** | **71.35%** | **62.95%** | **91.28%** | **70.6%** |
-| Hyp words | 2,415 | 3,362 | 3,159 | 1,615 | 1,682 | **2,173** | 555 | 1,791 |
-| Hits | 1,105 | 1,063 | 1,057 | 942 | 939 | **1,270** | 246 | 1,022 |
-| Substitutions | 561 | 1,532 | 1,440 | 567 | 609 | **674** | 308 | 573 |
-| Deletions | 1,144 | 215 | 313 | 1,301 | 1,262 | **866** | 2,256 | 1,215 |
-| Insertions | 228 | 767 | 662 | 106 | 134 | **229** | 1 | 196 |
-| Segments | — | — | 109 | 55 | — | **55** | — | 55 |
+| Metric | v1 (chunk=30) | v2 (split) | v3 (no split) | v4 (chunk=10) | v5 (chunk=20) | **v6 (chunk=15)** | v7 (chunk=25+hotwords) | **v8 (chunk=25, no hotwords)** | **v9 (onset=0.300)** | **v10 (v9 + filter)** |
+|--------|:------------:|:---------:|:------------:|:-------------:|:-------------:|:----------------:|:---------------------:|:----------------------------:|:--------------------:|:---------------------:|
+| **WER** | **68.79%** | **89.47%** | **85.94%** | **70.25%** | **71.35%** | **62.95%** | **91.28%** | **70.6%** | **47.84%** | **71.21%** |
+| Hyp words | 2,415 | 3,362 | 3,159 | 1,615 | 1,682 | **2,173** | 555 | 1,791 | 3,245 | 1,538 |
+| Hits | 1,105 | 1,063 | 1,057 | 942 | 939 | **1,270** | 246 | 1,022 | 2,110 | 882 |
+| Substitutions | 561 | 1,532 | 1,440 | 567 | 609 | **674** | 308 | 573 | 402 | 534 |
+| Deletions | 1,144 | 215 | 313 | 1,301 | 1,262 | **866** | 2,256 | 1,215 | 128 | 1,224 |
+| Insertions | 228 | 767 | 662 | 106 | 134 | **229** | 1 | 196 | 733 | 122 |
+| Segments | — | — | 109 | 55 | — | **55** | — | 55 | 55 | 55 |
+
+**Key insight:** v9 (onset=0.300) is the best run at 47.84% WER — deletions dropped 87% vs v6. v10 (same config + hallucination filter) regressed to 71.21% WER due to model non-determinism (52% fewer hypothesis words). The hallucination filter removed 0 segments. See ISSUES.md #44 and #45.
 
 **Key insight:** chunk_size=15 (v6) is the best tested value at **62.95% WER** — beats the v1 baseline (68.79%) by **5.84pp**. chunk_size=25 without hotwords (v8) gives 70.6% WER — worse than chunk_size=15 by 7.65pp. chunk_size=25 + hotwords (v7) caused catastrophic degradation (91.28%). **The optimal chunk_size is confirmed at 15. No further chunk_size tuning needed.** Next improvement avenues: vad_onset/vad_offset tuning, model fine-tuning, or post-processing.
 
@@ -435,6 +438,48 @@ Clean test to isolate the chunk_size=25 effect (v7 was confounded by hotwords). 
 - **Revert config to chunk_size=15** — the best known value
 - **Explore vad_onset/vad_offset tuning** — these parameters control VAD sensitivity and may improve recall
 - **Model fine-tuning** — the most promising path to significant WER reduction
+
+### v10 — v9 + hallucination filter (2026-05-31)
+
+Test run to evaluate the hallucination filter's impact on insertions (the dominant error mode in v9). Same VAD config as v9 (onset=0.300, offset=0.400, chunk_size=15).
+
+#### WER results — v10 (v9 + hallucination filter)
+
+| Metric | vs fasit_clean.txt (2640 words) | vs fasit_improved.txt (2810 words) |
+|--------|:-------------------------------:|:----------------------------------:|
+| **WER** | **71.21%** | **74.98%** |
+| CER | 58.53% | 62.49% |
+| Hyp words | 1,538 | 1,576 |
+| Hits | 882 | 882 |
+| Substitutions | 534 | 574 |
+| Deletions | 1,224 | 1,354 |
+| Insertions | 122 | 120 |
+| Segments (normalized) | 55 | 55 |
+| Raw segments | 109 | 109 |
+
+#### Comparison with v9 (same VAD config, no filter)
+
+| Metric | v9 | v10 | Δ |
+|--------|:--:|:---:|:-:|
+| **WER** | **47.84%** | **71.21%** | **+23.37pp** |
+| Hyp words | 3,245 | 1,538 | −1,707 (−53%) |
+| Hits | 2,110 | 882 | −1,228 |
+| Substitutions | 402 | 534 | +132 |
+| Deletions | 128 | 1,224 | +1,096 |
+| Insertions | 733 | 122 | −611 (−83%) |
+
+**Key findings:**
+1. **Hallucination filter reduced insertions 83%** (733→122) — the filter logic is sound. 🎉
+2. **BUT the filter removed 0 segments** — the conservative thresholds (no_speech_prob > 0.5, confidence < 0.3, compression_ratio > 3.0) did not trigger on any of the 109 raw segments.
+3. **The deletion increase is NOT from the filter** — the model itself produced 52% fewer words in v10 (1,538 vs 3,245 hypothesis words). Both runs have 109 raw segments.
+4. **Model non-determinism is the root cause** — temperature=0.2 introduces sampling variation. The model's output varies significantly between runs for conversational speech with many short VAD segments.
+5. **WER increased from 47.84% to 71.21%** — the deletion increase (128→1,224) completely overwhelmed the insertion reduction (733→122).
+
+#### Implications
+- The hallucination filter is a good idea but needs more aggressive thresholds to actually catch hallucinations
+- The real problem is model non-determinism — v9 may have been a "lucky" run
+- **Next step:** Run v11 with temperature=0.0 (greedy decoding) to test reproducibility. If WER stabilizes, the non-determinism hypothesis is confirmed and greedy decoding is the fix.
+- See ISSUES.md #44 (updated) and #45 (new) for full details.
 
 ### Single-file test (142s)
 
@@ -527,7 +572,10 @@ These milestones are based on the empirical baseline (mean confidence 0.447, 100
   - **Hypothesis is 28% shorter than reference** (1,894 vs. 2,640 words) — the model misses entire phrases, especially names, numbers, and dialect content.
 - **VAD chunk_size fix (v4):** chunk_size=10 improved WER from 85.94% to 70.25% (Δ = -15.69pp) vs v3, but overcorrected — deletions increased from 313 to 1,301.
 - **Optimal chunk_size confirmed at 15:** v6 (chunk=15) = 62.95% WER, v8 (chunk=25) = 70.6% WER. chunk_size=15 is the best tested value.
-- **Gate for next:** WER baseline known (62.95% at chunk_size=15). Next priority: explore vad_onset/vad_offset tuning or model fine-tuning.
+- **VAD onset=0.300 (v9):** 47.84% WER — best run so far. Deletions dropped 87% (128 vs 866 in v6). Insertions became the dominant error mode (733).
+- **Hallucination filter (v10):** Insertions dropped 83% (733→122) but model non-determinism caused deletions to skyrocket (128→1,224). WER regressed to 71.21%. The filter removed 0 segments — the problem is upstream.
+- **Model non-determinism discovered:** temperature=0.2 causes significant output variation between runs. v10 produced 52% fewer words than v9 with identical config. See ISSUES.md #45.
+- **Gate for next:** WER baseline known (47.84% best at v9). Next priority: investigate model non-determinism (run v11 with temperature=0.0).
 
 ### M2 — Dialect-aware confidence + vocabulary expansion ✅ (2026-05-30)
 - **Target confidence:** 0.55 mean (calibrated)

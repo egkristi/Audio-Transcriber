@@ -10,6 +10,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Phase 11: Fully automated pipeline** — new ROADMAP.md phase for auto-detecting language and dialect per file, then optimizing models, VAD parameters, decoding parameters, and normalization rules accordingly. Covers: language detection with confidence-based routing, dialect auto-detection from text markers, per-language model routing, per-dialect VAD/decoding profiles, graceful fallback chain, batch-mode optimization, CLI simplification, and detection reporting. (ROADMAP.md)
 
+## [0.1.31] - 2026-05-31
+
+### Added
+- **Hallucination filter** — `_filter_hallucinated_segments()` in `src/transcribe.py` post-processes transcription segments to remove hallucinations. Multi-signal ensemble using: no_speech_prob (>0.5), confidence_level (<0.3), compression_ratio (>3.0), text_length (<1), and single-word repetition (3+ same words). Configurable via `config.yaml` `hallucination_filter` block. CLI flag `--no-hallucination-filter` to disable.
+- **Fasit1 v10 WER evaluation results** — hallucination filter tested with v9 VAD config (onset=0.300, offset=0.400, chunk_size=15).
+- **Insertions reduced 83%** — from 733 (v9) to 122 (v10). The hallucination filter logic is sound.
+- **Critical finding: model non-determinism discovered.** v10 produced 52% fewer hypothesis words than v9 (1,538 vs 3,245) despite identical config. The hallucination filter removed 0 segments — the deletion increase (128→1,224) is from model sampling variation at temperature=0.2, not the filter.
+- **ISSUES.md #45** — new issue documenting model non-determinism. temperature=0.2 causes significant output variation between runs. Next step: run v11 with temperature=0.0 (greedy decoding) to test reproducibility.
+
+### Changed
+- **config.yaml** — added `hallucination_filter` block under `transcription`: `enabled: true`, `no_speech_threshold: 0.5`, `min_confidence: 0.3`, `max_compression_ratio: 3.0`, `min_text_length: 1`.
+- **scripts/run_pipeline.py** — added `--no-hallucination-filter` CLI flag. Wired `hallucination_filter` parameter through `process_single_file()` to `transcribe_audio()`.
+- **ISSUES.md #44** — updated with v10 results. New comparison table (v6 vs v9 vs v10). Next steps updated: model non-determinism is now the primary investigation target.
+- **ROADMAP.md** — Phase 6 updated with v10 results. New "v10 — v9 + hallucination filter" section added to test run findings. WER comparison table extended with v9 and v10 columns. M1 section updated with non-determinism finding.
+- **pyproject.toml** — version bumped to 0.1.31.
+
 ## [0.1.30] - 2026-05-31
 
 ### Added

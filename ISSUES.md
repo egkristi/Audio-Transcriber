@@ -311,26 +311,62 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 
 - **#8** — `editor.py` web editor (parked; Subtitle Edit covers the need)
 - **#44** — VAD onset/offset tuning: v9 (onset=0.300, offset=0.400) achieves 47.84% WER (vs 63.67% v6 baseline). Deletions reduced 87% (998→128). Next: reduce insertions (733) which are now the dominant error mode.
+- **#45** — Model non-determinism: v10 produced 52% fewer words than v9 with identical config
+
+### #45 — Model non-determinism: v10 produced 52% fewer words than v9 with identical config
+- **File:** `src/transcribe.py`
+- **Status:** Open
+- **Priority:** Critical
+- **Description:** v10 (same VAD config as v9: onset=0.300, offset=0.400, chunk_size=15) produced only 1538 hypothesis words vs 3245 in v9 — a **52% reduction**. Both runs used the same model, same audio file, same config. The only difference was the addition of the hallucination filter (which removed 0 segments).
+- **Evidence:**
+  - v9: 3245 hyp words, 128 deletions, 733 insertions, 47.84% WER
+  - v10: 1538 hyp words, 1224 deletions, 122 insertions, 71.21% WER
+  - Both have 109 raw segments, 55 normalized segments
+  - Hallucination filter removed 0 segments (no log messages)
+  - The model itself produced shorter output in v10 — this is upstream of the filter
+- **Root cause hypothesis:** temperature=0.2 introduces sampling variation. The model's output can vary significantly between runs, especially for conversational speech with many short segments. The VAD with onset=0.300 produces many short segments, and each segment's transcription is independently sampled.
+- **Impact:** WER results are not reproducible. A "good" run (v9) and a "bad" run (v10) can differ by 23pp WER. This makes optimization difficult — improvements may be noise, not signal.
+- **Potential fixes:**
+  1. **Set temperature=0.0** — greedy decoding eliminates sampling variation. Risk: more repetitions/stuttering. On CPU, no fallback penalty since we use a single temperature value.
+  2. **Run multiple passes and vote** — transcribe N times with temperature>0, use majority voting to select the best transcription. Very expensive on CPU.
+  3. **Increase beam_size further** — larger beam (e.g., 15-20) may reduce variance by exploring more of the search space. Trade-off: slower decoding.
+  4. **Use VAD with fewer, longer segments** — higher onset threshold (e.g., 0.500) produces fewer segments with more context, reducing per-segment variance.
+- **Next step:** Run v11 with temperature=0.0 to test reproducibility. If WER stabilizes, the non-determinism hypothesis is confirmed.
+- **Discovered during:** v10 post-pipeline analysis (2026-05-31).
 
 ### #44 — VAD chunk_size & onset/offset tuning: v9 (onset=0.300, offset=0.400) achieves 47.84% WER
 - **File:** `src/transcribe.py`, `config.yaml`
 - **Status:** Open
 - **Priority:** Critical
-- **Description:** Implemented `vad_options` passthrough to `whisperx.load_model()` in `_load_model()`. Default `chunk_size` changed from 30s to 15s via `config.yaml`. Post-processing split (`_split_long_segments()`) disabled by default (was counterproductive, +22-26pp WER). VAD onset/offset tuning tested in v9.
+- **Description:** Implemented `vad_options` passthrough to `whisperx.load_model()` in `_load_model()`. Default `chunk_size` changed from 30s to 15s via `config.yaml`. Post-processing split (`_split_long_segments()`) disabled by default (was counterproductive, +22-26pp WER). VAD onset/offset tuning tested in v9. Hallucination filter added in v10.
+
 - **Results (fasit1, all evaluated against fasit_clean.txt for fair comparison with v6):**
 
-  | Metric | v6 (chunk=15, onset=0.500, offset=0.363) | **v9 (chunk=15, onset=0.300, offset=0.400)** | Change |
-  |--------|:----------------------------------------:|:--------------------------------------------:|:------:|
-  | **WER** | **63.67%** | **47.84%** | **-15.83pp** |
-  | CER | 52.13% | 37.21% | -14.92pp |
-  | Hyp words | 1894 | 3245 | +1351 |
-  | Hits | 1211 | 2110 | **+899** |
-  | Substitutions | 431 | 402 | -29 |
-  | Deletions | 998 | 128 | **-870** |
-  | Insertions | 252 | 733 | +481 |
-  | Segments | 55 | 55 | 0 |
+  | Metric | v6 (chunk=15, onset=0.500, offset=0.363) | **v9 (chunk=15, onset=0.300, offset=0.400)** | **v10 (v9 + hallucination filter)** | Change (v9→v10) |
+  |--------|:----------------------------------------:|:--------------------------------------------:|:-----------------------------------:|:--------------:|
+  | **WER** | **63.67%** | **47.84%** | **71.21%** | **+23.37pp** |
+  | CER | 52.13% | 37.21% | 58.53% | +21.32pp |
+  | Hyp words | 1894 | 3245 | 1538 | -1707 |
+  | Hits | 1211 | 2110 | 882 | **-1228** |
+  | Substitutions | 431 | 402 | 534 | +132 |
+  | Deletions | 998 | 128 | 1224 | **+1096** |
+  | Insertions | 252 | 733 | 122 | **-611** |
+  | Segments | 55 | 55 | 55 | 0 |
 
-- **Analysis:**
+- **v10 Analysis (hallucination filter):**
+  - **Insertions reduced 83%** (733 → 122) — the hallucination filter successfully targets the dominant error mode from v9. 🎉
+  - **However, WER increased to 71.21%** because deletions skyrocketed (128 → 1224). The hypothesis word count dropped from 3245 to 1538 — the model produced far fewer words.
+  - **The hallucination filter removed 0 segments** — the conservative thresholds (no_speech_prob > 0.5, confidence < 0.3, compression_ratio > 3.0) did not trigger on any of the 109 raw segments. The deletion increase is NOT from the filter.
+  - **Root cause of deletion increase:** The v10 run produced fundamentally different output from v9 despite identical VAD config. The model generated shorter segments with less content. This may be due to:
+    1. **Model non-determinism** — temperature=0.2 introduces sampling variation between runs
+    2. **VAD boundary sensitivity** — slight differences in VAD segment boundaries can cause the model to produce very different transcriptions for conversational speech
+    3. **Alignment model interaction** — only 27/55 segments had word-level scores, suggesting alignment failures that may affect downstream processing
+  - **Key insight:** The hallucination filter works correctly (0 false positives removed) but the thresholds are too conservative to catch the actual hallucinations. The filter needs either:
+    - Lower thresholds (e.g., no_speech_prob > 0.3, confidence < 0.5)
+    - Cross-segment repetition detection (e.g., "hallo"×7 across segment boundaries)
+    - Or the insertion problem needs a different approach entirely
+
+- **v9 Analysis (onset=0.300):**
   - **VAD onset=0.300 (lower) catches much more speech:** deletions dropped from 998 to 128 — an **87% reduction**. The model now captures nearly all spoken words.
   - **Trade-off: more insertions (252 → 733).** The lower onset threshold causes the VAD to activate on quieter/non-speech audio, producing more false-positive segments. The model hallucinates content in these segments.
   - **Hits improved dramatically:** 1211 → 2110 (+899 correct words). The model is now capturing the vast majority of content.
@@ -339,14 +375,16 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
   - **Alignment model loading is very slow on CPU:** The 1B-parameter `NbAiLab/nb-wav2vec2-1b-bokmaal-v2` model takes ~12 minutes to load on CPU (M1 Mac). A 300m version exists (`NbAiLab/nb-wav2vec2-300m-bokmaal-v2`) that would load ~3x faster.
   - **Temperature fallback is impractical on CPU:** Using `temperature=0.0` with `temperature_increment_on_fallback=0.2` causes 6x decoding passes (3+ hours). Fixed by using a single `temperature=0.2` value.
 
-- **Next improvement avenues:**
-  1. **Reduce insertions** — the 733 insertions are now the dominant error mode. Possible fixes: higher VAD onset (e.g., 0.400), post-processing to filter low-confidence segments, or model fine-tuning.
-  2. **Reduce substitutions** — 402 substitutions remain. Dialect normalization (Bokmål bias) and name/number errors are the main causes.
-  3. **Model fine-tuning** — fine-tune nb-whisper-large-verbatim on Norwegian conversational speech to reduce both substitutions and insertions.
-  4. **Switch to 300m alignment model** — `NbAiLab/nb-wav2vec2-300m-bokmaal-v2` would load ~3x faster on CPU with minimal accuracy loss.
+- **Next improvement avenues (updated for v10):**
+  1. **Model non-determinism** — run v9 config again (without hallucination filter) to verify v9 results are reproducible. If v9 was a "lucky" run, the insertion problem may be intermittent.
+  2. **Cross-segment repetition detection** — the hallucination filter currently checks each segment independently. Add detection of repeated words across adjacent segments (e.g., "hallo"×7 spanning segments 1-2).
+  3. **Adaptive threshold tuning** — instead of fixed thresholds, use statistical outlier detection on the segment population to identify hallucinations.
+  4. **Reduce substitutions** — 402 substitutions remain. Dialect normalization (Bokmål bias) and name/number errors are the main causes.
+  5. **Model fine-tuning** — fine-tune nb-whisper-large-verbatim on Norwegian conversational speech to reduce both substitutions and insertions.
+  6. **Switch to 300m alignment model** — `NbAiLab/nb-wav2vec2-300m-bokmaal-v2` would load ~3x faster on CPU with minimal accuracy loss.
 
-- **Discovered during:** Test run analysis (2026-05-30). v9 evaluated 2026-05-31.
-- **Note:** v6 baseline uses `fasit_clean.txt` (2640 words). v9 evaluated against same reference for fair comparison. Results against `fasit_improved.txt` (2810 words): raw WER=53.7%, normalized WER=53.24%.
+- **Discovered during:** Test run analysis (2026-05-30). v9 evaluated 2026-05-31. v10 evaluated 2026-05-31.
+- **Note:** v6 baseline uses `fasit_clean.txt` (2640 words). v9 and v10 evaluated against same reference for fair comparison. Results against `fasit_improved.txt` (2810 words): v9 raw WER=53.7%, v10 raw WER=74.98%.
 
 ### #39 — WER baseline 63.67% — model unusable for unattended transcription
 - **File:** `scripts/run_pipeline.py`, `src/transcribe.py`

@@ -99,6 +99,7 @@ class AudioTranscriberPipeline:
         preserve_dialect: bool = True,  # Preserve dialect forms by default (dialect is valid Norwegian)
         min_speakers: Optional[int] = None,
         max_speakers: Optional[int] = None,
+        hallucination_filter: bool = True,
     ) -> Dict:
         """
         Process a single audio file through the pipeline.
@@ -122,6 +123,8 @@ class AudioTranscriberPipeline:
                               normalize dialect words to standard Norwegian)
             min_speakers: Minimum number of speakers for diarization
             max_speakers: Maximum number of speakers for diarization
+            hallucination_filter: Enable post-transcription hallucination filtering
+                                  (default: True). Set to False to keep all segments.
             
         Returns:
             Dict with pipeline results
@@ -267,6 +270,15 @@ class AudioTranscriberPipeline:
                                 f"Hotwords generated: {len(hotword_candidates)} words"
                                 + (f" (dialect={dialect})" if dialect else "")
                             )
+                
+                # Apply hallucination filter override from CLI flag
+                # --no-hallucination-filter disables the filter even if config enables it
+                if not hallucination_filter:
+                    transcription_config = dict(transcription_config)
+                    hf_config = dict(transcription_config.get("hallucination_filter", {}))
+                    hf_config["enabled"] = False
+                    transcription_config["hallucination_filter"] = hf_config
+                    logger.info("Hallucination filter disabled via --no-hallucination-filter")
                 
                 primary_segments, primary_output = transcribe_audio(
                     preprocessed_path,
@@ -714,6 +726,14 @@ Examples:
         dest="preserve_dialect",
         help="Flag dialect-standard mismatches during normalization"
     )
+    parser.add_argument(
+        "--no-hallucination-filter",
+        action="store_false",
+        dest="hallucination_filter",
+        help="Disable post-transcription hallucination filtering. By default, segments "
+             "with high no_speech_prob or very low confidence are removed. Use this flag "
+             "to keep all segments (raw model output)."
+    )
     
     # Logging
     parser.add_argument(
@@ -778,6 +798,7 @@ Examples:
             "preserve_dialect": args.preserve_dialect,
             "min_speakers": min_speakers,
             "max_speakers": max_speakers,
+            "hallucination_filter": args.hallucination_filter,
         }
         
         if args.input.is_file():

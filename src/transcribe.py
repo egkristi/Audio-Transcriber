@@ -435,6 +435,100 @@ class Transcriber:
         return segments
 
 
+def _filter_hallucinated_segments(
+    segments: List[TranscriptionSegment],
+    no_speech_threshold: float = 0.5,
+    min_confidence: float = 0.3,
+    max_compression_ratio: float = 3.0,
+    min_text_length: int = 1,
+) -> List[TranscriptionSegment]:
+    """
+    Filter segments that are likely hallucinations or false positives.
+    
+    The v9 VAD config (onset=0.300) catches much more speech but also produces
+    false-positive segments on background noise, breathing, and silence. These
+    segments typically have high no_speech_prob, low confidence, or contain
+    only filler/repetition. (ISSUES.md #44)
+    
+    Filtering strategy (multi-signal ensemble):
+    1. no_speech_prob > threshold: model says "this is not speech" — strong signal
+    2. confidence < min_confidence: very low acoustic alignment confidence
+    3. compression_ratio > max_compression_ratio: extreme repetition/looping
+    4. Empty or single-character text: no meaningful content
+    
+    Args:
+        segments: List of transcription segments to filter
+        no_speech_threshold: Maximum no_speech_prob allowed (0.0-1.0).
+                             Higher = more aggressive filtering.
+                             Default 0.5 (model is fairly confident it's not speech).
+        min_confidence: Minimum confidence level allowed (0.0-1.0).
+                        Default 0.3 (very low bar — only catches extreme cases).
+        max_compression_ratio: Maximum compression ratio allowed.
+                               Default 3.0 (extreme repetition/looping).
+        min_text_length: Minimum text length (characters) to keep a segment.
+                         Default 1 (filters empty segments).
+    
+    Returns:
+        Filtered list of segments with likely hallucinations removed.
+    """
+    if not segments:
+        return segments
+    
+    before = len(segments)
+    filtered = []
+    removed_reasons = []
+    
+    for seg in segments:
+        reasons = []
+        
+        # Signal 1: no_speech_prob — model says "not speech"
+        if seg.no_speech_prob is not None and seg.no_speech_prob > no_speech_threshold:
+            reasons.append(f"no_speech_prob={seg.no_speech_prob:.2f}")
+        
+        # Signal 2: Very low confidence
+        if seg.confidence_level < min_confidence:
+            reasons.append(f"confidence={seg.confidence_level:.2f}")
+        
+        # Signal 3: Extreme compression ratio (repetition/looping)
+        if seg.compression_ratio is not None and seg.compression_ratio > max_compression_ratio:
+            reasons.append(f"compression_ratio={seg.compression_ratio:.2f}")
+        
+        # Signal 4: Empty or near-empty text
+        text_stripped = seg.text.strip() if seg.text else ""
+        if len(text_stripped) < min_text_length:
+            reasons.append(f"text_length={len(text_stripped)}")
+        
+        # Signal 5: Text is just filler/repetition (single word repeated 3+ times)
+        if text_stripped:
+            words = text_stripped.split()
+            if len(words) >= 3 and len(set(w.lower() for w in words)) == 1:
+                reasons.append(f"single_word_repeated:{words[0]}")
+        
+        if reasons:
+            removed_reasons.append((seg.id, seg.start, seg.end, reasons, text_stripped[:80]))
+        else:
+            filtered.append(seg)
+    
+    after = len(filtered)
+    removed = before - after
+    
+    if removed > 0:
+        logger.info(
+            f"Hallucination filter: {before} → {after} segments "
+            f"(removed {removed} likely hallucinations)"
+        )
+        # Log details for the first few removed segments
+        for seg_id, start, end, reasons, text in removed_reasons[:5]:
+            logger.debug(
+                f"  Removed segment {seg_id} [{start:.1f}-{end:.1f}s]: "
+                f"{', '.join(reasons)} | text: {text!r}"
+            )
+        if len(removed_reasons) > 5:
+            logger.debug(f"  ... and {len(removed_reasons) - 5} more removed segments")
+    
+    return filtered
+
+
 def _split_long_segments(
     segments: List[TranscriptionSegment],
     max_duration: float = 15.0,
@@ -559,6 +653,21 @@ def transcribe_audio(
         language=language,
         word_timestamps=word_timestamps,
     )
+    
+    # Post-transcription hallucination filtering.
+    # The v9 VAD config (onset=0.300) catches much more speech but also produces
+    # false-positive segments on background noise/breathing. This filter removes
+    # segments that are likely hallucinations based on decoder signals.
+    # (ISSUES.md #44)
+    hallucination_filter = config.get("hallucination_filter", {})
+    if hallucination_filter.get("enabled", True):
+        filter_kwargs = {
+            "no_speech_threshold": hallucination_filter.get("no_speech_threshold", 0.5),
+            "min_confidence": hallucination_filter.get("min_confidence", 0.3),
+            "max_compression_ratio": hallucination_filter.get("max_compression_ratio", 3.0),
+            "min_text_length": hallucination_filter.get("min_text_length", 1),
+        }
+        segments = _filter_hallucinated_segments(segments, **filter_kwargs)
     
     # Post-processing segment split — DISABLED by default.
     # WARNING: Post-processing split is COUNTERPRODUCTIVE — it increases WER
