@@ -159,6 +159,21 @@ class Transcriber:
                 asr_options["length_penalty"] = self.config["length_penalty"]
             if "hotwords" in self.config:
                 asr_options["hotwords"] = self.config["hotwords"]
+            if "repetition_penalty" in self.config:
+                asr_options["repetition_penalty"] = self.config["repetition_penalty"]
+            if "no_repeat_ngram_size" in self.config:
+                asr_options["no_repeat_ngram_size"] = self.config["no_repeat_ngram_size"]
+            if "temperature" in self.config:
+                asr_options["temperature"] = self.config["temperature"]
+            if "temperature_increment_on_fallback" in self.config:
+                asr_options["temperature_increment_on_fallback"] = self.config["temperature_increment_on_fallback"]
+            if "max_temperature" in self.config:
+                asr_options["max_temperature"] = self.config["max_temperature"]
+            # Suppress common hallucination tokens (silence, non-speech tokens)
+            # faster-whisper already has sensible defaults, but we can add extra
+            # suppression for Norwegian-specific artifacts
+            if "suppress_tokens" in self.config:
+                asr_options["suppress_tokens"] = self.config["suppress_tokens"]
             
             load_kwargs = {
                 "device": device,

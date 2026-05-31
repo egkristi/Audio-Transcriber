@@ -95,8 +95,8 @@ class AudioTranscriberPipeline:
         vocab_file: Optional[Path] = None,
         dialect: Optional[str] = None,
         spell_check: bool = False,
-        normalize: bool = False,
-        preserve_dialect: bool = False,
+        normalize: bool = True,  # Enable normalization by default (fixes stuttering, punctuation, capitalization)
+        preserve_dialect: bool = True,  # Preserve dialect forms by default (dialect is valid Norwegian)
         min_speakers: Optional[int] = None,
         max_speakers: Optional[int] = None,
     ) -> Dict:
@@ -116,9 +116,10 @@ class AudioTranscriberPipeline:
             dialect: Dialect region for vocabulary injection
                      (e.g. "northern_norwegian")
             spell_check: Enable Norwegian spell-checking on output
-            normalize: Enable Norwegian text normalization
-            preserve_dialect: Preserve dialect forms in output (don't normalize
-                              dialect words to standard Norwegian)
+            normalize: Enable Norwegian text normalization (default: True — fixes
+                      stuttering, punctuation, capitalization, and spacing)
+            preserve_dialect: Preserve dialect forms in output (default: True — don't
+                              normalize dialect words to standard Norwegian)
             min_speakers: Minimum number of speakers for diarization
             max_speakers: Maximum number of speakers for diarization
             
@@ -689,17 +690,29 @@ Examples:
     parser.add_argument(
         "--normalize",
         action="store_true",
-        default=False,
+        default=True,
         help="Enable Norwegian text normalization (punctuation, capitalization, stuttering removal). "
-             "Off by default to preserve verbatim model output. Raw output saved as *_raw.srt when enabled."
+             "On by default. Use --no-normalize to preserve raw verbatim model output."
+    )
+    parser.add_argument(
+        "--no-normalize",
+        action="store_false",
+        dest="normalize",
+        help="Disable Norwegian text normalization (preserve raw verbatim model output)"
     )
     parser.add_argument(
         "--preserve-dialect",
         action="store_true",
-        default=False,
+        default=True,  # Default to preserving dialect — dialect is valid Norwegian
         help="Preserve dialect forms in output. When enabled, dialect words are not flagged "
-             "as corrections during normalization. Use with --normalize to normalize standard "
-             "Norwegian while keeping dialect forms intact."
+             "as corrections during normalization. On by default. Use --no-preserve-dialect "
+             "to flag dialect-standard mismatches."
+    )
+    parser.add_argument(
+        "--no-preserve-dialect",
+        action="store_false",
+        dest="preserve_dialect",
+        help="Flag dialect-standard mismatches during normalization"
     )
     
     # Logging

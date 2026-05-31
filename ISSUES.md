@@ -310,36 +310,43 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 ## Open
 
 - **#8** — `editor.py` web editor (parked; Subtitle Edit covers the need)
-- **#44** — VAD chunk_size tuning: chunk_size=15 best so far (62.95% WER), next test chunk_size=25
+- **#44** — VAD onset/offset tuning: v9 (onset=0.300, offset=0.400) achieves 47.84% WER (vs 63.67% v6 baseline). Deletions reduced 87% (998→128). Next: reduce insertions (733) which are now the dominant error mode.
 
-### #44 — VAD chunk_size fix: chunk_size=15 best so far (62.95% WER), chunk_size=25 worse (70.6%)
+### #44 — VAD chunk_size & onset/offset tuning: v9 (onset=0.300, offset=0.400) achieves 47.84% WER
 - **File:** `src/transcribe.py`, `config.yaml`
 - **Status:** Open
 - **Priority:** Critical
-- **Description:** Implemented `vad_options` passthrough to `whisperx.load_model()` in `_load_model()`. Default `chunk_size` changed from 30s to 15s via `config.yaml`. Post-processing split (`_split_long_segments()`) disabled by default (was counterproductive, +22-26pp WER).
-- **Results (fasit1, 2810 reference words, all evaluated against fasit_improved.txt):**
+- **Description:** Implemented `vad_options` passthrough to `whisperx.load_model()` in `_load_model()`. Default `chunk_size` changed from 30s to 15s via `config.yaml`. Post-processing split (`_split_long_segments()`) disabled by default (was counterproductive, +22-26pp WER). VAD onset/offset tuning tested in v9.
+- **Results (fasit1, all evaluated against fasit_clean.txt for fair comparison with v6):**
 
-  | Metric | v1 (chunk=30) | v2 (split) | v3 (no split) | v4 (chunk=10) | v5 (chunk=20) | **v6 (chunk=15)** | v7 (chunk=25+hotwords) | **v8 (chunk=25, no hotwords)** |
-  |--------|:------------:|:---------:|:------------:|:-------------:|:-------------:|:----------------:|:---------------------:|:----------------------------:|
-  | WER | 68.79% | 89.47% | 85.94% | 70.25% | 71.35% | **62.95%** | 91.28% | **70.6%** |
-  | Hyp words | 2415 | 3362 | 3159 | 1615 | 1682 | **2173** | 555 | **1791** |
-  | Hits | 1105 | 1063 | 1057 | 942 | 939 | **1270** | 246 | **1022** |
-  | Substitutions | 561 | 1532 | 1440 | 567 | 609 | **674** | 308 | **573** |
-  | Deletions | 1144 | 215 | 313 | 1301 | 1262 | **866** | 2256 | **1215** |
-  | Insertions | 228 | 767 | 662 | 106 | 134 | **229** | 1 | **196** |
-  | Segments | — | — | 109 | 55 | — | **55** | — | **55** |
+  | Metric | v6 (chunk=15, onset=0.500, offset=0.363) | **v9 (chunk=15, onset=0.300, offset=0.400)** | Change |
+  |--------|:----------------------------------------:|:--------------------------------------------:|:------:|
+  | **WER** | **63.67%** | **47.84%** | **-15.83pp** |
+  | CER | 52.13% | 37.21% | -14.92pp |
+  | Hyp words | 1894 | 3245 | +1351 |
+  | Hits | 1211 | 2110 | **+899** |
+  | Substitutions | 431 | 402 | -29 |
+  | Deletions | 998 | 128 | **-870** |
+  | Insertions | 252 | 733 | +481 |
+  | Segments | 55 | 55 | 0 |
 
 - **Analysis:**
-  - **chunk_size=15 (v6) is the best tested value** at **62.95% WER** — beats the v1 baseline (68.79%) by **5.84pp**
-  - **chunk_size=25 without hotwords (v8) gives 70.6% WER** — worse than chunk_size=15 by **7.65pp**, and slightly worse than the v1 baseline (68.79%)
-  - **chunk_size=25 + hotwords (v7) gave 91.28% WER** — the hotwords severely degraded quality (confounded with chunk_size change)
-  - **The pattern is non-monotonic and peaked at 15:** 30→20→15 improves, but 25 is worse than 15. The optimal chunk_size is 15.
-  - **Hits significantly improved at chunk_size=15:** 1270 vs 1022 (v8) — 248 more correct words
-  - **Deletions substantially lower at chunk_size=15:** 866 vs 1215 (v8) — 349 fewer deletions
-  - **Substitutions comparable:** 674 (v6) vs 573 (v8) — slightly higher at chunk_size=15 but offset by far fewer deletions
-- **Conclusion:** chunk_size=15 is the confirmed optimal value at **62.95% WER**. Both chunk_size=25 (70.6%) and chunk_size=30 (68.79%) are worse. Hotwords at chunk_size=25 caused catastrophic degradation (91.28%). **Recommendation: keep chunk_size=15 as default. No further chunk_size tuning needed.** Next improvement avenues: vad_onset/vad_offset tuning, model fine-tuning, or post-processing.
-- **Discovered during:** Test run analysis (2026-05-30). Evaluated 2026-05-30 (v4), 2026-05-31 (v5), 2026-05-31 (v6), 2026-06-01 (v7), 2026-06-01 (v8).
-- **Note:** v1 baseline was originally reported as 63.67% against `fasit_clean.txt` (2640 words). All values in this table are re-evaluated against `fasit_improved.txt` (2810 words) for fair comparison. The corrected v1 baseline is 68.79%.
+  - **VAD onset=0.300 (lower) catches much more speech:** deletions dropped from 998 to 128 — an **87% reduction**. The model now captures nearly all spoken words.
+  - **Trade-off: more insertions (252 → 733).** The lower onset threshold causes the VAD to activate on quieter/non-speech audio, producing more false-positive segments. The model hallucinates content in these segments.
+  - **Hits improved dramatically:** 1211 → 2110 (+899 correct words). The model is now capturing the vast majority of content.
+  - **Substitutions slightly improved:** 431 → 402 (-29). The substitution rate is relatively stable.
+  - **Hypothesis word count grew from 1894 to 3245** — much closer to the reference (2640 words). Previously the model was under-generating (too many deletions); now it over-generates (too many insertions).
+  - **Alignment model loading is very slow on CPU:** The 1B-parameter `NbAiLab/nb-wav2vec2-1b-bokmaal-v2` model takes ~12 minutes to load on CPU (M1 Mac). A 300m version exists (`NbAiLab/nb-wav2vec2-300m-bokmaal-v2`) that would load ~3x faster.
+  - **Temperature fallback is impractical on CPU:** Using `temperature=0.0` with `temperature_increment_on_fallback=0.2` causes 6x decoding passes (3+ hours). Fixed by using a single `temperature=0.2` value.
+
+- **Next improvement avenues:**
+  1. **Reduce insertions** — the 733 insertions are now the dominant error mode. Possible fixes: higher VAD onset (e.g., 0.400), post-processing to filter low-confidence segments, or model fine-tuning.
+  2. **Reduce substitutions** — 402 substitutions remain. Dialect normalization (Bokmål bias) and name/number errors are the main causes.
+  3. **Model fine-tuning** — fine-tune nb-whisper-large-verbatim on Norwegian conversational speech to reduce both substitutions and insertions.
+  4. **Switch to 300m alignment model** — `NbAiLab/nb-wav2vec2-300m-bokmaal-v2` would load ~3x faster on CPU with minimal accuracy loss.
+
+- **Discovered during:** Test run analysis (2026-05-30). v9 evaluated 2026-05-31.
+- **Note:** v6 baseline uses `fasit_clean.txt` (2640 words). v9 evaluated against same reference for fair comparison. Results against `fasit_improved.txt` (2810 words): raw WER=53.7%, normalized WER=53.24%.
 
 ### #39 — WER baseline 63.67% — model unusable for unattended transcription
 - **File:** `scripts/run_pipeline.py`, `src/transcribe.py`

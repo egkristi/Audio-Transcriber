@@ -161,11 +161,42 @@ class VocabularyManager:
         if not prompt_parts:
             return ""
 
-        # Create prompt string
-        prompt = "Vocabulary: " + ", ".join(prompt_parts)
-
-        # Final accurate count
+        # Create prompt string — use a natural language structure that Whisper
+        # responds to better than a bare comma-separated list. Research shows
+        # Whisper's initial_prompt works best when formatted as natural text
+        # that resembles the expected transcription style.
+        # 
+        # Structure: "The following words are important: word1, word2, word3.
+        #  Pay attention to dialect forms: word4, word5."
+        # 
+        # This gives Whisper both vocabulary context AND stylistic priming.
+        prompt_parts_lower = [w.lower() for w in prompt_parts]
+        
+        # Separate dialect words from proper nouns/other vocabulary
+        dialect_words = [w for w in prompt_parts_lower if w in {
+            'æ', 'mæ', 'dæ', 'sæ', 'dokker', 'dåkker', 'ikkje', 'itte',
+            'ka', 'kæ', 'kor', 'korsn', 'kordan', 'koffer', 'koffor',
+            'bærre', 'berre', 'nån', 'nåkkå', 'nokka', 'mykje',
+            'ho', 'hu', 'kje', 'ska', 'veit', 'trur', 'sei',
+            'no', 'ille', 'lita', 'lite', 'e', 'je', 'ha',
+        }]
+        other_words = [w for w in prompt_parts if w.lower() not in dialect_words]
+        
+        prompt_pieces = []
+        if other_words:
+            prompt_pieces.append("The following words are important: " + ", ".join(other_words[:30]) + ".")
+        if dialect_words:
+            prompt_pieces.append("Use dialect forms: " + ", ".join(dialect_words[:20]) + ".")
+        
+        prompt = " ".join(prompt_pieces)
+        
+        # If the structured prompt is too long, fall back to simple list
         final_tokens = count_tokens(prompt)
+        if final_tokens > _WHISPER_PROMPT_TOKEN_LIMIT or not prompt.strip():
+            # Fallback: simple comma-separated list
+            prompt = "Vocabulary: " + ", ".join(prompt_parts)
+            final_tokens = count_tokens(prompt)
+        
         logger.info(
             f"Generated initial prompt ({final_tokens} tokens, {len(prompt_parts)} items). "
             f"Limit: {max_tokens} / hard cap {_WHISPER_PROMPT_TOKEN_LIMIT}"

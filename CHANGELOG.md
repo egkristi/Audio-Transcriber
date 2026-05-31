@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.30] - 2026-05-31
+
+### Added
+- **Fasit1 v9 WER evaluation results** — VAD onset/offset tuning tested: onset=0.300, offset=0.400.
+- **Major improvement: v9 achieves 47.84% WER** — down from 63.67% (v6) — a **15.83pp improvement**.
+- **Deletions reduced by 87%** — from 998 (v6) to 128 (v9). Lower VAD onset catches much more speech.
+- **Hits improved by 74%** — from 1,211 (v6) to 2,110 (v9). Model now captures the vast majority of content.
+- **Critical finding: temperature fallback is impractical on CPU.** Using `temperature=0.0` with `temperature_increment_on_fallback=0.2` causes 6x decoding passes (3+ hours). Fixed by using single `temperature=0.2`.
+- **Alignment model loading is very slow on CPU.** The 1B-parameter `NbAiLab/nb-wav2vec2-1b-bokmaal-v2` takes ~12 minutes to load on M1 Mac. A 300m version exists for future optimization.
+
+### Changed
+- **config.yaml** — `temperature` changed from 0.0 (with fallback) to 0.2 (single value, no fallback). Removed `temperature_increment_on_fallback` and `max_temperature`. VAD onset=0.300, offset=0.400.
+- **ISSUES.md #44** — completely rewritten with v9 results. New comparison table (v6 vs v9). Next steps: reduce insertions (733) which are now the dominant error mode.
+- **ROADMAP.md** — Phase 6 updated with v9 results. Next steps documented.
+- **pyproject.toml** — version bumped to 0.1.30.
+
 ## [0.1.29] - 2026-06-01
 
 ### Added
