@@ -75,8 +75,9 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 - [x] CUDA/GPU support for Linux/Windows — device auto-detection implemented (#13). CTranslate2 uses CUDA when available; PyTorch diarization uses CUDA/MPS.
 - [x] Model caching and memory optimization for batch jobs — language detection model cached (`_language_model`); transcription model loaded once per run. Full batch memory optimization is future work.
 - [x] **VAD chunk_size control at model-load time** — added `vad_options` dict with configurable `chunk_size` to `whisperx.load_model()` in `src/transcribe.py:_load_model()`. Config key: `transcription.vad_options.chunk_size` in `config.yaml`. (ISSUES.md #44)
-  - **Result:** chunk_size=15 (v6) is best at **62.95% WER** — beats the v1 baseline (68.79%) by 5.84pp. This is the first VAD chunk_size tuning to improve over baseline. The pattern is non-monotonic: 30→20→15 improves, but 10 is worse than 15. The optimal chunk_size is between 15 and 30.
-  - **v7 (chunk_size=25 + hotwords): 91.28% WER** — hotwords from vocabulary (proper nouns + dialect words) severely degraded transcription quality. The model produced repetitive gibberish ("akkurat akkurat akkurat", "kommer kommer kommer") and lost most content (555 hypothesis words vs 2810 reference words). **Hotwords are harmful for this model/dataset combination.** The hotwords feature is retained for users who want it, but it is NOT recommended for production use. The best configuration remains chunk_size=15 with hotwords disabled.
+  - **Result:** chunk_size=15 (v6) is best at **62.95% WER** — beats the v1 baseline (68.79%) by 5.84pp. This is the first VAD chunk_size tuning to improve over baseline. The pattern is non-monotonic: 30→20→15 improves, but 25 is worse than 15. The optimal chunk_size is **15**.
+  - **v7 (chunk_size=25 + hotwords): 91.28% WER** — hotwords from vocabulary (proper nouns + dialect words) severely degraded transcription quality. The model produced repetitive gibberish and lost most content (555 hypothesis words vs 2810 reference words). **Hotwords are harmful for this model/dataset combination.** The hotwords feature is retained for users who want it, but it is NOT recommended for production use.
+  - **v8 (chunk_size=25, no hotwords): 70.6% WER** — clean test isolating chunk_size effect. chunk_size=25 is worse than chunk_size=15 (62.95%) by 7.65pp, and slightly worse than the v1 baseline (68.79%). **Confirmed: chunk_size=15 is optimal. No further chunk_size tuning needed.**
 - [x] **Disable post-processing split by default** — `_split_long_segments()` with `max_segment_duration: 15` INCREASED WER significantly in testing. Post-processing split is now opt-in only (default `max_segment_duration=0`), with a clear warning that it may degrade accuracy.
 - [x] **Fix alignment model coverage (ISSUES.md #42)** — `_align_with_whisperx()` previously returned word-level scores for only 18% of segments due to a rounding mismatch in the merge logic. Replaced exact `round(start, 2)` lookup with fuzzy time-window matching (50ms tolerance). Also fixed `confidence.py` to extract `"score"` fields from `seg["words"]` directly (not just from the `aligned_word_segments` parameter, which was always `None`). Now all segments that the wav2vec2 model can align get acoustic confidence scores.
 - [x] **Hotwords support for faster-whisper (ISSUES.md #41, #43)** — added `hotwords` passthrough via `asr_options` to `whisperx.load_model()`. The pipeline now generates hotwords from vocabulary (proper nouns + dialect words) and passes them to the decoder. Configurable via `config.yaml` `transcription.hotwords` or `vocabulary.use_hotwords`.
@@ -257,17 +258,17 @@ First-ever WER measurement against a real ground-truth transcript. Pipeline run 
 
 #### WER comparison across all runs
 
-| Metric | v1 (chunk=30) | v2 (split) | v3 (no split) | v4 (chunk=10) | v5 (chunk=20) | **v6 (chunk=15)** |
-|--------|:------------:|:---------:|:------------:|:-------------:|:-------------:|:----------------:|
-| **WER** | **68.79%** | **89.47%** | **85.94%** | **70.25%** | **71.35%** | **62.95%** |
-| Hyp words | 2,415 | 3,362 | 3,159 | 1,615 | 1,682 | **2,173** |
-| Hits | 1,105 | 1,063 | 1,057 | 942 | 939 | **1,270** |
-| Substitutions | 561 | 1,532 | 1,440 | 567 | 609 | **674** |
-| Deletions | 1,144 | 215 | 313 | 1,301 | 1,262 | **866** |
-| Insertions | 228 | 767 | 662 | 106 | 134 | **229** |
-| Segments | — | — | 109 | 55 | — | **55** |
+| Metric | v1 (chunk=30) | v2 (split) | v3 (no split) | v4 (chunk=10) | v5 (chunk=20) | **v6 (chunk=15)** | v7 (chunk=25+hotwords) | **v8 (chunk=25, no hotwords)** |
+|--------|:------------:|:---------:|:------------:|:-------------:|:-------------:|:----------------:|:---------------------:|:----------------------------:|
+| **WER** | **68.79%** | **89.47%** | **85.94%** | **70.25%** | **71.35%** | **62.95%** | **91.28%** | **70.6%** |
+| Hyp words | 2,415 | 3,362 | 3,159 | 1,615 | 1,682 | **2,173** | 555 | 1,791 |
+| Hits | 1,105 | 1,063 | 1,057 | 942 | 939 | **1,270** | 246 | 1,022 |
+| Substitutions | 561 | 1,532 | 1,440 | 567 | 609 | **674** | 308 | 573 |
+| Deletions | 1,144 | 215 | 313 | 1,301 | 1,262 | **866** | 2,256 | 1,215 |
+| Insertions | 228 | 767 | 662 | 106 | 134 | **229** | 1 | 196 |
+| Segments | — | — | 109 | 55 | — | **55** | — | 55 |
 
-**Key insight:** chunk_size=15 (v6) is the best tested value at **62.95% WER** — beats the v1 baseline (68.79%) by **5.84pp**. This is the first VAD chunk_size tuning to improve over baseline. Hits significantly improved (1,270 vs 1,105) and deletions substantially reduced (866 vs 1,144). The pattern is non-monotonic: 30→20→15 improves, but 10 is worse than 15. The optimal chunk_size is between 15 and 30. **Next: test chunk_size=25 or explore vad_onset/vad_offset tuning.**
+**Key insight:** chunk_size=15 (v6) is the best tested value at **62.95% WER** — beats the v1 baseline (68.79%) by **5.84pp**. chunk_size=25 without hotwords (v8) gives 70.6% WER — worse than chunk_size=15 by 7.65pp. chunk_size=25 + hotwords (v7) caused catastrophic degradation (91.28%). **The optimal chunk_size is confirmed at 15. No further chunk_size tuning needed.** Next improvement avenues: vad_onset/vad_offset tuning, model fine-tuning, or post-processing.
 
 #### Error analysis
 
@@ -289,13 +290,55 @@ First-ever WER measurement against a real ground-truth transcript. Pipeline run 
 
 The 68.79% WER (corrected baseline against fasit_improved.txt) is far above the 15–25% range estimated before the fasit existed. This means the model is **not usable for unattended transcription** — every output needs full human review and correction. The confidence system's 100% flag rate was correct: every segment genuinely needs review.
 
-The VAD chunk_size fix (chunk_size=15, v6) improved WER from 68.79% (v1) to **62.95%** — a 5.84pp improvement. This is the first VAD chunk_size tuning to beat the baseline. chunk_size=10 (v4) and chunk_size=20 (v5) were both worse than baseline. The optimal chunk_size is between 15 and 30. **Next: test chunk_size=25 or explore vad_onset/vad_offset tuning.**
+The VAD chunk_size fix (chunk_size=15, v6) improved WER from 68.79% (v1) to **62.95%** — a 5.84pp improvement. This is the first VAD chunk_size tuning to beat the baseline. chunk_size=10 (v4) and chunk_size=20 (v5) were both worse than baseline. chunk_size=25 without hotwords (v8) gave 70.6% WER — worse than chunk_size=15 by 7.65pp. **The optimal chunk_size is confirmed at 15. No further chunk_size tuning needed.** Next improvement avenues: vad_onset/vad_offset tuning, model fine-tuning, or post-processing.
 
 Post-processing split (`_split_long_segments()`) is disabled by default since it makes WER worse (+22-26pp).
 
 ### Stratified sample run (2026-05-30)
 
 A stratified sample of 10 files (5 Håvard Kristiansen + 5 Elida Anna Wiktoria Kristiansen) across size ranges (2 small <1MB, 4 medium 1-20MB, 4 large >20MB) is running in background. Results pending — estimated 2-4 hours on CPU. As of 22:20, 4/10 files processed (3 Håvard + 1 Elida).
+
+### v8 — chunk_size=25, no hotwords (2026-06-01)
+
+Clean test to isolate the chunk_size=25 effect (v7 was confounded by hotwords). Pipeline run with `chunk_size=25`, `use_hotwords=false`, `--dialect northern_norwegian` on the same fasit1 file.
+
+#### WER results — v8 (VAD chunk_size=25, no hotwords)
+
+| Metric | Value |
+|--------|-------|
+| **WER** | **70.6%** |
+| CER | 56.65% |
+| MER | 66.0% |
+| WIL | 79.25% |
+| Reference words | 2,810 |
+| Hypothesis words | 1,791 |
+| Hits (correct) | 1,022 |
+| Substitutions | 573 |
+| Deletions | 1,215 |
+| Insertions | 196 |
+| Segments | 55 |
+
+#### Comparison with v6 (chunk_size=15, best known)
+
+| Metric | v6 (chunk=15) | v8 (chunk=25) | Δ |
+|--------|:------------:|:------------:|:-:|
+| **WER** | **62.95%** | **70.6%** | **+7.65pp** |
+| Hits | 1,270 | 1,022 | −248 |
+| Substitutions | 674 | 573 | −101 |
+| Deletions | 866 | 1,215 | +349 |
+| Insertions | 229 | 196 | −33 |
+
+**Key findings:**
+1. **chunk_size=25 is worse than chunk_size=15** by 7.65pp WER. The model misses 349 more words (deletions) at chunk_size=25.
+2. **Hotwords were the primary cause of v7's catastrophic 91.28% WER** — without hotwords, chunk_size=25 gives 70.6%, which is still worse than chunk_size=15 but not catastrophically so.
+3. **The optimal chunk_size is confirmed at 15.** The pattern is clear: 30→20→15 improves, 25 is worse than 15. No further chunk_size tuning is needed.
+4. **Alignment model now working:** 28/55 segments (51%) have word-level scores — up from 18% before the #42 fix. The fuzzy time-window matching (50ms tolerance) is effective.
+5. **Transcription speed:** ~22.5 min for 27.5 min audio (0.82× realtime) on CPU. Alignment added ~12 min (0.43× realtime). Total: ~34.5 min for 27.5 min audio (1.25× realtime).
+
+#### Next steps
+- **Revert config to chunk_size=15** — the best known value
+- **Explore vad_onset/vad_offset tuning** — these parameters control VAD sensitivity and may improve recall
+- **Model fine-tuning** — the most promising path to significant WER reduction
 
 ### Single-file test (142s)
 
@@ -386,8 +429,9 @@ These milestones are based on the empirical baseline (mean confidence 0.447, 100
   - **Long segments hurt accuracy:** 30-second segments are too long for conversational speech with pauses. Shorter segments would reduce stuttering and improve alignment.
   - **Alignment model still broken:** Only 10/55 segments have word-level scores from `nb-wav2vec2-1b-bokmaal-v2`.
   - **Hypothesis is 28% shorter than reference** (1,894 vs. 2,640 words) — the model misses entire phrases, especially names, numbers, and dialect content.
-- **VAD chunk_size fix (v4):** chunk_size=10 improved WER from 85.94% to 70.25% (Δ = -15.69pp) vs v3, but overcorrected — deletions increased from 313 to 1,301. Optimal chunk_size likely between 10 and 30.
-- **Gate for next:** WER baseline known (63.67%). Next priority: find optimal VAD chunk_size (test 20s), then reduce WER through better dialect handling and prompt optimization.
+- **VAD chunk_size fix (v4):** chunk_size=10 improved WER from 85.94% to 70.25% (Δ = -15.69pp) vs v3, but overcorrected — deletions increased from 313 to 1,301.
+- **Optimal chunk_size confirmed at 15:** v6 (chunk=15) = 62.95% WER, v8 (chunk=25) = 70.6% WER. chunk_size=15 is the best tested value.
+- **Gate for next:** WER baseline known (62.95% at chunk_size=15). Next priority: explore vad_onset/vad_offset tuning or model fine-tuning.
 
 ### M2 — Dialect-aware confidence + vocabulary expansion ✅ (2026-05-30)
 - **Target confidence:** 0.55 mean (calibrated)

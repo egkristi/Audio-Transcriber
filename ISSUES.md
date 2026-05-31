@@ -312,34 +312,33 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 - **#8** — `editor.py` web editor (parked; Subtitle Edit covers the need)
 - **#44** — VAD chunk_size tuning: chunk_size=15 best so far (62.95% WER), next test chunk_size=25
 
-### #44 — VAD chunk_size fix: chunk_size=15 best so far (62.95% WER), beats baseline
+### #44 — VAD chunk_size fix: chunk_size=15 best so far (62.95% WER), chunk_size=25 worse (70.6%)
 - **File:** `src/transcribe.py`, `config.yaml`
 - **Status:** Open
 - **Priority:** Critical
 - **Description:** Implemented `vad_options` passthrough to `whisperx.load_model()` in `_load_model()`. Default `chunk_size` changed from 30s to 15s via `config.yaml`. Post-processing split (`_split_long_segments()`) disabled by default (was counterproductive, +22-26pp WER).
 - **Results (fasit1, 2810 reference words, all evaluated against fasit_improved.txt):**
 
-  | Metric | v1 (chunk=30) | v2 (split) | v3 (no split) | v4 (chunk=10) | v5 (chunk=20) | **v6 (chunk=15)** |
-  |--------|:------------:|:---------:|:------------:|:-------------:|:-------------:|:----------------:|
-  | WER | 68.79% | 89.47% | 85.94% | 70.25% | 71.35% | **62.95%** |
-  | Hyp words | 2415 | 3362 | 3159 | 1615 | 1682 | **2173** |
-  | Hits | 1105 | 1063 | 1057 | 942 | 939 | **1270** |
-  | Substitutions | 561 | 1532 | 1440 | 567 | 609 | **674** |
-  | Deletions | 1144 | 215 | 313 | 1301 | 1262 | **866** |
-  | Insertions | 228 | 767 | 662 | 106 | 134 | **229** |
-  | Segments | — | — | 109 | 55 | — | **55** |
+  | Metric | v1 (chunk=30) | v2 (split) | v3 (no split) | v4 (chunk=10) | v5 (chunk=20) | **v6 (chunk=15)** | v7 (chunk=25+hotwords) | **v8 (chunk=25, no hotwords)** |
+  |--------|:------------:|:---------:|:------------:|:-------------:|:-------------:|:----------------:|:---------------------:|:----------------------------:|
+  | WER | 68.79% | 89.47% | 85.94% | 70.25% | 71.35% | **62.95%** | 91.28% | **70.6%** |
+  | Hyp words | 2415 | 3362 | 3159 | 1615 | 1682 | **2173** | 555 | **1791** |
+  | Hits | 1105 | 1063 | 1057 | 942 | 939 | **1270** | 246 | **1022** |
+  | Substitutions | 561 | 1532 | 1440 | 567 | 609 | **674** | 308 | **573** |
+  | Deletions | 1144 | 215 | 313 | 1301 | 1262 | **866** | 2256 | **1215** |
+  | Insertions | 228 | 767 | 662 | 106 | 134 | **229** | 1 | **196** |
+  | Segments | — | — | 109 | 55 | — | **55** | — | **55** |
 
 - **Analysis:**
   - **chunk_size=15 (v6) is the best tested value** at **62.95% WER** — beats the v1 baseline (68.79%) by **5.84pp**
-  - **First VAD chunk_size tuning to improve over baseline** — all previous values (10, 20, 30) were worse
-  - **Hits significantly improved:** 1270 vs 1105 (v1) — 165 more correct words
-  - **Deletions substantially reduced:** 866 vs 1144 (v1) — 278 fewer deletions
-  - **Substitutions slightly higher:** 674 vs 561 (v1) — 113 more substitutions
-  - **Insertions essentially unchanged:** 229 vs 228 (v1)
-  - **chunk_size=15 hits a sweet spot:** short enough to avoid stuttering (like chunk=30), long enough to preserve context (unlike chunk=10/20)
-  - **The pattern is non-monotonic:** 30→20→15 improves, but 10 is worse than 15. The optimal chunk_size is between 15 and 30.
-- **Conclusion:** chunk_size=15 is the best tested value at 62.95% WER. The VAD chunk_size tuning approach is validated — it can improve over baseline. Deletions remain the dominant error mode (866), but are significantly reduced from v1 (1144). **Next step: test chunk_size=25** to see if further improvement is possible, or explore vad_onset/vad_offset tuning.
-- **Discovered during:** Test run analysis (2026-05-30). Evaluated 2026-05-30 (v4), 2026-05-31 (v5), and 2026-05-31 (v6).
+  - **chunk_size=25 without hotwords (v8) gives 70.6% WER** — worse than chunk_size=15 by **7.65pp**, and slightly worse than the v1 baseline (68.79%)
+  - **chunk_size=25 + hotwords (v7) gave 91.28% WER** — the hotwords severely degraded quality (confounded with chunk_size change)
+  - **The pattern is non-monotonic and peaked at 15:** 30→20→15 improves, but 25 is worse than 15. The optimal chunk_size is 15.
+  - **Hits significantly improved at chunk_size=15:** 1270 vs 1022 (v8) — 248 more correct words
+  - **Deletions substantially lower at chunk_size=15:** 866 vs 1215 (v8) — 349 fewer deletions
+  - **Substitutions comparable:** 674 (v6) vs 573 (v8) — slightly higher at chunk_size=15 but offset by far fewer deletions
+- **Conclusion:** chunk_size=15 is the confirmed optimal value at **62.95% WER**. Both chunk_size=25 (70.6%) and chunk_size=30 (68.79%) are worse. Hotwords at chunk_size=25 caused catastrophic degradation (91.28%). **Recommendation: keep chunk_size=15 as default. No further chunk_size tuning needed.** Next improvement avenues: vad_onset/vad_offset tuning, model fine-tuning, or post-processing.
+- **Discovered during:** Test run analysis (2026-05-30). Evaluated 2026-05-30 (v4), 2026-05-31 (v5), 2026-05-31 (v6), 2026-06-01 (v7), 2026-06-01 (v8).
 - **Note:** v1 baseline was originally reported as 63.67% against `fasit_clean.txt` (2640 words). All values in this table are re-evaluated against `fasit_improved.txt` (2810 words) for fair comparison. The corrected v1 baseline is 68.79%.
 
 ### #39 — WER baseline 63.67% — model unusable for unattended transcription

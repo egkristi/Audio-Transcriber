@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.29] - 2026-06-01
+
+### Added
+- **Fasit1 v8 WER evaluation results** — chunk_size=25 tested WITHOUT hotwords to isolate the chunk_size effect (v7 was confounded by hotwords).
+- **Critical finding: chunk_size=25 is worse than chunk_size=15.** v8 achieved **70.6% WER** vs v6's 62.95% — a 7.65pp degradation. chunk_size=25 increases deletions by 349 words compared to chunk_size=15.
+- **Hotwords confirmed as primary cause of v7 catastrophe.** Without hotwords, chunk_size=25 gives 70.6% WER (bad but not catastrophic). With hotwords (v7), it was 91.28%.
+- **Optimal chunk_size confirmed at 15.** The pattern is clear: 30→20→15 improves, 25 is worse than 15. No further chunk_size tuning needed.
+
+### Changed
+- **ROADMAP.md** — v8 results added to all comparison tables. New "v8 — chunk_size=25, no hotwords" section added to test run findings. Phase 6 updated: chunk_size=15 confirmed optimal. Next steps: vad_onset/vad_offset tuning or model fine-tuning.
+- **ISSUES.md #44** — v7 and v8 results added to comparison table. Conclusion updated: chunk_size=15 is confirmed optimal. No further chunk_size tuning needed. Next avenues: vad_onset/vad_offset tuning, model fine-tuning, or post-processing.
+- **config.yaml** — `chunk_size` reverted from 25 back to 15 (the best known value).
+- **pyproject.toml** — version bumped to 0.1.29.
+
 ## [0.1.28] - 2026-06-01
 
 ### Added

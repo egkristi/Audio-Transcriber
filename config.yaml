@@ -63,7 +63,7 @@ transcription:
   # speech. Setting chunk_size=10 produces shorter VAD-merged segments that
   # reduce stuttering at the source. (See ISSUES.md #40, #44)
   vad_options:
-    chunk_size: 25  # Seconds. Lower = shorter segments, less stuttering
+    chunk_size: 15  # Seconds. Optimal value: 15 (62.95% WER). 25 gives 70.6% WER.
     vad_onset: 0.500  # VAD activation threshold
     vad_offset: 0.363  # VAD deactivation threshold
   
@@ -124,3 +124,4 @@ spell_check:
 vocabulary:
   custom_words_file: null  # Path to JSON file with {word: context} pairs
   use_initial_prompt: true  # Inject vocabulary into Whisper's initial_prompt
+  use_hotwords: false  # Disabled by default — v7 test showed hotwords severely degrade quality (91.28% WER vs 62.95%)
