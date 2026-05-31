@@ -157,6 +157,8 @@ class Transcriber:
                 asr_options["patience"] = self.config["patience"]
             if "length_penalty" in self.config:
                 asr_options["length_penalty"] = self.config["length_penalty"]
+            if "hotwords" in self.config:
+                asr_options["hotwords"] = self.config["hotwords"]
             
             load_kwargs = {
                 "device": device,
@@ -166,6 +168,12 @@ class Transcriber:
             if asr_options:
                 load_kwargs["asr_options"] = asr_options
                 logger.debug(f"Using asr_options: {list(asr_options.keys())}")
+            
+            # Use Silero VAD instead of PyAnnote (default) to avoid multiprocessing
+            # deadlock on macOS. PyAnnote VAD hangs indefinitely during pipeline.apply()
+            # on certain audio files. Silero VAD is faster and more reliable on CPU.
+            # (See ISSUES.md #44)
+            load_kwargs["vad_method"] = "silero"
             
             # Pass vad_options to control VAD merging BEFORE transcription.
             # Default chunk_size=30s causes stuttering in conversational speech.
@@ -236,39 +244,59 @@ class Transcriber:
         align_model, align_metadata = _align_model_cache[align_cache_key]
         
         logger.debug("Running standalone alignment")
-        aligned_result = whisperx.align(
-            segments,
-            align_model,
-            align_metadata,
-            audio,
-            device,
-            return_char_alignments=False,
-        )
+        try:
+            aligned_result = whisperx.align(
+                segments,
+                align_model,
+                align_metadata,
+                audio,
+                device,
+                return_char_alignments=False,
+            )
+            aligned_segments = aligned_result.get("segments", [])
+            if not aligned_segments:
+                logger.warning(f"Alignment returned empty results for {len(segments)} segments")
+        except Exception as align_err:
+            logger.error(f"Alignment failed: {align_err} — returning segments without word scores")
+            return {"segments": list(segments)}
         
         # Merge alignment data back into the original segments.
         # The aligned segments have word-level "score" fields (acoustic confidence),
         # but may lack decoder signals (avg_logprob, no_speech_prob, etc.).
         # We merge the alignment words into the original segments to preserve
         # both decoder signals and alignment scores.
-        aligned_segments = aligned_result["segments"]
         
-        # Build a lookup by start time for alignment segments
-        aligned_by_start = {}
-        for aligned_seg in aligned_segments:
-            key = round(aligned_seg.get("start", 0), 2)
-            aligned_by_start[key] = aligned_seg
+        # Use fuzzy time-window matching instead of exact rounding.
+        # Rounding to 2 decimals (11ms precision) causes ~82% of segments to
+        # miss their alignment data due to timing drift between Whisper and
+        # wav2vec2. (ISSUES.md #42)
+        ALIGNMENT_TIME_TOLERANCE = 0.050  # 50ms tolerance
         
         merged_segments = []
         for orig_seg in segments:
             merged = dict(orig_seg)
-            key = round(orig_seg.get("start", 0), 2)
-            aligned_seg = aligned_by_start.get(key)
-            if aligned_seg and "words" in aligned_seg:
+            orig_start = orig_seg.get("start", 0)
+            
+            # Find closest aligned segment by start time
+            best_match = None
+            best_diff = float("inf")
+            for candidate in aligned_segments:
+                diff = abs(candidate.get("start", 0) - orig_start)
+                if diff < best_diff and diff < ALIGNMENT_TIME_TOLERANCE:
+                    best_diff = diff
+                    best_match = candidate
+            
+            if best_match and best_match.get("words"):
                 # Add aligned words with scores to the original segment
-                merged["words"] = aligned_seg["words"]
+                merged["words"] = best_match["words"]
+            elif best_match and "words" in best_match and not best_match.get("words"):
+                # Words key exists but is empty — log for debugging
+                logger.debug(f"Segment at {orig_start:.2f}s: alignment returned empty word list")
+            
             merged_segments.append(merged)
         
-        logger.info(f"Alignment complete: {sum(1 for s in merged_segments if s.get('words'))} segments have word-level scores")
+        aligned_count = sum(1 for s in merged_segments if s.get("words"))
+        logger.info(f"Alignment complete: {aligned_count}/{len(merged_segments)} segments have word-level scores")
         return {"segments": merged_segments}
     
     def transcribe(

@@ -128,6 +128,13 @@ class ConfidenceExtractor:
                     sc.min_word_probability = min(probs)
             
             # Alignment scores from whisperx align()
+            # Check BOTH sources: (1) aligned_word_segments parameter (legacy),
+            # and (2) "score" fields in words attached to the segment dict.
+            # The latter is populated by _align_with_whisperx() in transcribe.py.
+            # (ISSUES.md #42)
+            alignment_scores = []
+            
+            # Source 1: aligned_word_segments parameter
             if aligned_word_segments:
                 segment_words = [
                     w for w in aligned_word_segments
@@ -135,8 +142,17 @@ class ConfidenceExtractor:
                 ]
                 if segment_words:
                     scores = [w.get("score", 1.0) for w in segment_words]
-                    sc.alignment_score = np.mean(scores)
-                    sc.min_word_alignment_score = min(scores)
+                    alignment_scores.extend(scores)
+            
+            # Source 2: "score" fields in words attached to the segment
+            if words:
+                word_scores = [w.get("score") for w in words if "score" in w]
+                if word_scores:
+                    alignment_scores.extend(word_scores)
+            
+            if alignment_scores:
+                sc.alignment_score = np.mean(alignment_scores)
+                sc.min_word_alignment_score = min(alignment_scores)
             
             results.append(sc)
         

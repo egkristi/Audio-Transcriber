@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.28] - 2026-06-01
+
+### Added
+- **Fasit1 v7 WER evaluation results** — chunk_size=25 tested with hotwords enabled.
+- **Critical finding: hotwords degrade quality.** v7 achieved **91.28% WER** — far worse than v6 (62.95%). The model produced repetitive gibberish and lost most content (555 hypothesis words vs 2,810 reference words). Hotwords from vocabulary (proper nouns + dialect words) are actively harmful for nb-whisper-large-verbatim.
+
+### Changed
+- **ROADMAP.md** — v7 results added. Hotwords feature documented as NOT recommended for production use. Best configuration remains chunk_size=15 with hotwords disabled.
+- **ISSUES.md #41, #43** — hotwords implementation marked as resolved but with caveat about quality degradation.
+
 ## [0.1.27] - 2026-06-01
 
 ### Added

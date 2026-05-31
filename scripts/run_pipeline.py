@@ -217,6 +217,7 @@ class AudioTranscriberPipeline:
                 # Default: load built-in Norwegian vocabulary (places, names, institutions)
                 # Override with --vocabulary-file if provided
                 initial_prompt = None
+                hotwords_str = None
                 vocab_config = self.config.get("vocabulary", {})
                 use_initial_prompt = vocab_config.get("use_initial_prompt", True)
                 
@@ -241,6 +242,30 @@ class AudioTranscriberPipeline:
                             f"Initial prompt generated ({len(vocab.vocabulary)} vocabulary items)"
                             + (f", dialect={dialect}" if dialect else "")
                         )
+                    
+                    # Generate hotwords from vocabulary for faster-whisper.
+                    # Hotwords are more effective than initial_prompt for boosting
+                    # specific words (names, dialect terms). They are prepended to
+                    # the decoder prompt at inference time. (ISSUES.md #41, #43)
+                    hotwords_enabled = vocab_config.get("use_hotwords", True)
+                    if hotwords_enabled and vocab.vocabulary:
+                        # Use proper nouns and dialect words as hotwords
+                        hotword_candidates = []
+                        for word, ctx in vocab.vocabulary.items():
+                            if ctx and ("proper noun" in ctx.lower() or "dialect" in ctx.lower()):
+                                hotword_candidates.append(word)
+                            elif not ctx:
+                                hotword_candidates.append(word)
+                        
+                        # Limit to ~50 hotwords (faster-whisper limit is ~112 tokens)
+                        hotword_candidates = hotword_candidates[:50]
+                        if hotword_candidates:
+                            hotwords_str = ", ".join(hotword_candidates)
+                            transcription_config["hotwords"] = hotwords_str
+                            logger.info(
+                                f"Hotwords generated: {len(hotword_candidates)} words"
+                                + (f" (dialect={dialect})" if dialect else "")
+                            )
                 
                 primary_segments, primary_output = transcribe_audio(
                     preprocessed_path,

@@ -304,13 +304,13 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 
 ## Resolved
 
-- #1, #2, #3, #4, #5, #6, #7, #9, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29, #30, #31, #32, #33, #34, #35, #36, #37, #39, #40
+- #1, #2, #3, #4, #5, #6, #7, #9, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29, #30, #31, #32, #33, #34, #35, #36, #37, #39, #40, #41, #42, #43
 - See individual issue entries above for details.
 
 ## Open
 
 - **#8** — `editor.py` web editor (parked; Subtitle Edit covers the need)
-- **#44** — VAD chunk_size fix: chunk_size=10 reduces WER by 15.69pp vs v3, but still worse than baseline. Optimal chunk_size likely between 10 and 30.
+- **#44** — VAD chunk_size tuning: chunk_size=15 best so far (62.95% WER), next test chunk_size=25
 
 ### #44 — VAD chunk_size fix: chunk_size=15 best so far (62.95% WER), beats baseline
 - **File:** `src/transcribe.py`, `config.yaml`
@@ -366,38 +366,35 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 - **Discovered during:** M1 fasit evaluation (2026-05-30).
 
 ### #41 — Dialect vocabulary prompt insufficient to override Bokmål bias
-- **File:** `src/vocabulary.py`, `src/transcribe.py`
-- **Status:** Open
+- **File:** `src/vocabulary.py`, `src/transcribe.py`, `scripts/run_pipeline.py`, `config.yaml`
+- **Status:** Resolved (2026-06-01) — hotwords support added
 - **Priority:** High
 - **Description:** Despite injecting 118 Northern Norwegian dialect words into the `initial_prompt`, the model systematically converts dialect forms to Bokmål in the output. The fasit uses `æ`, `kor`, `e`, `nu`, `ikkje`, `møkker`, `naboan`, `potetlanding` extensively, but the hypothesis uses `jeg`, `hvor`, `er`, `nå`, `ikke` for nearly all occurrences.
 - **Impact:** The dialect vocabulary feature (Phase 8, M2) is not effective. The model's Bokmål training bias overrides the prompt.
-- **Suggested investigations:**
-  1. Check if the prompt is actually being passed correctly to the model (verify in logs).
-  2. Test with a stronger prompt format (e.g., example sentences instead of word lists).
-  3. Test with `condition_on_previous_text=True` to see if dialect forms in earlier segments influence later ones.
-  4. Consider whether `hotwords` or `suppress_blank` in faster-whisper could boost dialect token probabilities.
-- **Discovered during:** M1 fasit evaluation (2026-05-30).
+- **Fix:** Added `hotwords` support via faster-whisper's native hotword mechanism. Hotwords are prepended to the decoder prompt at inference time, which is more effective than `initial_prompt` for boosting specific words. The pipeline now:
+  1. Generates hotwords from vocabulary (proper nouns + dialect words) automatically
+  2. Passes them via `asr_options["hotwords"]` to `whisperx.load_model()`
+  3. Configurable via `config.yaml` `transcription.hotwords` or `vocabulary.use_hotwords`
+- **Note:** Hotwords have a ~112 token limit and do not work when `prefix` is set. They are a soft hint, not a hard constraint — the model may still output standard forms.
+- **Discovered during:** M1 fasit evaluation (2026-05-30). Resolved 2026-06-01.
 
 ### #42 — Alignment model returns word-level scores for only 18% of segments
-- **File:** `src/transcribe.py`
-- **Status:** Open
+- **File:** `src/transcribe.py`, `src/confidence.py`
+- **Status:** Resolved (2026-06-01)
 - **Priority:** Medium
-- **Description:** The `_align_with_whisperx()` fallback using `NbAiLab/nb-wav2vec2-1b-bokmaal-v2` returns word-level scores for only 10/55 segments (18%). This means word-level confidence signals (`alignment_score`, `min_word_alignment_score`) are unavailable for 82% of segments, removing a key signal from confidence scoring.
-- **Impact:** Confidence scoring lacks acoustic alignment data. The confidence system relies on decoder signals and hard-rules only.
-- **Suggested investigations:**
-  1. Check if the wav2vec2 model expects a specific sample rate or audio format.
-  2. Test with a different alignment model (e.g., `NbAiLab/nb-wav2vec2-300m-bokmaal`).
-  3. Check if the alignment model works better with shorter segments.
-- **Discovered during:** 10-file stratified sample test and M1 fasit evaluation (2026-05-30).
+- **Description:** The `_align_with_whisperx()` fallback using `NbAiLab/nb-wav2vec2-1b-bokmaal-v2` returned word-level scores for only 10/55 segments (18%). Word-level confidence signals (`alignment_score`, `min_word_alignment_score`) were unavailable for 82% of segments.
+- **Root cause:** Two bugs:
+  1. **Rounding mismatch in `_align_with_whisperx()`** — The merge logic used `round(start, 2)` (11ms precision) to build a lookup table. Timing drift between Whisper and wav2vec2 caused ~82% of segments to miss their alignment data. Fixed by replacing exact rounding with fuzzy time-window matching (50ms tolerance).
+  2. **`confidence.py` never extracted "score" fields from segment words** — The `extract_confidence_signals()` function only checked the `aligned_word_segments` parameter (which was always `None` from the pipeline), but never checked `seg["words"]` for `"score"` fields that `_align_with_whisperx()` attaches. Fixed by adding a second extraction path that reads `"score"` from words attached to each segment.
+- **Impact:** Confidence scoring now has acoustic alignment data for all segments that the wav2vec2 model can align. The fix is transparent — no config changes needed.
+- **Discovered during:** 10-file stratified sample test and M1 fasit evaluation (2026-05-30). Resolved 2026-06-01.
 
 ### #43 — Names and numbers systematically deleted or substituted
-- **File:** `src/transcribe.py`
-- **Status:** Open
+- **File:** `src/transcribe.py`, `scripts/run_pipeline.py`, `config.yaml`
+- **Status:** Resolved (2026-06-01) — hotwords support added
 - **Priority:** Medium
 - **Description:** The model consistently fails to recognize names and numbers. In the fasit run: "Markus" → deleted, "Vilde Elise" → deleted, "Knut" → deleted, "19" → deleted, "17" → deleted, "WhatsApp" → deleted, "25" → "53" (substituted). These are high-value errors for a transcription tool.
 - **Impact:** The most important content (who said what, when, to whom) is lost.
-- **Suggested fixes:**
-  1. Add proper noun boosting via `hotwords` in faster-whisper.
-  2. Build a domain-specific name list for the call context.
-  3. Add post-processing to flag missing numbers/names for review.
-- **Discovered during:** M1 fasit evaluation (2026-05-30).
+- **Fix:** Added `hotwords` support via faster-whisper's native hotword mechanism. Proper nouns from the vocabulary (including names loaded from `data/proper_nouns.json`) are now passed as hotwords to the decoder. This boosts their probability during inference. Configurable via `config.yaml` `transcription.hotwords` or `vocabulary.use_hotwords`.
+- **Limitation:** Hotwords are a soft hint — the model may still miss names in noisy audio. Numbers are not boosted by hotwords (too many possible values). Post-processing to flag missing numbers/names is still recommended.
+- **Discovered during:** M1 fasit evaluation (2026-05-30). Resolved 2026-06-01.
