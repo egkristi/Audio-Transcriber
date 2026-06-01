@@ -382,8 +382,7 @@ class AudioTranscriberPipeline:
                     try:
                         full_text = " ".join(s.text for s in primary_segments if s.text)
                         if full_text.strip():
-                            dialect_pack = DialectPack()
-                            detected_dialect = dialect_pack.detect_dialect_from_segments(
+                            detected_dialect = DialectPack.detect_dialect_from_segments(
                                 [{"text": s.text} for s in primary_segments if s.text]
                             )
                             if detected_dialect:

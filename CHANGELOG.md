@@ -34,6 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Confidence test `test_repeated_words_flagged`** — updated to use non-filler word ("kake") after filler word exclusion was added. Assertion updated to use `startswith("repeated_words")` to match new flag format with word suffix.
 - **Spell checker now actually detects misspellings** — `NorwegianSpellChecker.check_word()` used `include_unknown=True` in SymSpell lookup, causing unknown words to be silently accepted as correct. Changed to `include_unknown=False` so unknown words return empty list and are correctly flagged. Also fixed `check_text()` to flag unknown words even when no suggestion is available (confidence=0.0). The Norwegian dictionary (334,169 words from LibreOffice nb_NO.dic) was already being downloaded and loaded — the bug was in the lookup logic, not the dictionary loading. (ISSUES.md #47, AUDIT.md K5)
+- **Dialect auto-detection no longer crashes** — `process_single_file()` in `run_pipeline.py` called `DialectPack()` without the required `data` argument. Changed to `DialectPack.detect_dialect_from_segments()` (static method call). Pipeline now correctly auto-detects dialect (e.g. "vestlandsk" for fasit1). (ISSUES.md #48)
+- **Alignment model name no longer passed as language code** — `_align_with_whisperx()` in `transcribe.py` passed the full model name (e.g. "NbAiLab/nb-wav2vec2-1b-bokmaal-v2") as `language_code` to `whisperx.load_align_model()`. Now passes language code ("no") as `language_code` and model name as `model_name`. Alignment now completes successfully with word-level scores. (ISSUES.md #49)
 
 ## [0.1.38] - 2026-06-01
 

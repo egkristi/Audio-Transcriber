@@ -268,21 +268,22 @@ class Transcriber:
         # For Norwegian Bokmål ("no"), uses NbAiLab/nb-wav2vec2-1b-bokmaal-v2.
         # For Norwegian Nynorsk ("nn"), uses NbAiLab/nb-wav2vec2-1b-nynorsk.
         # Falls back to whisperx's built-in alignment if no registry entry.
+        # IMPORTANT: language_code must be a language code (e.g. "no"), not a
+        # model name. The model name is passed separately as model_name. (#49)
         align_model_name = get_alignment_model(language)
-        if align_model_name is None:
-            # Fall back to whisperx's built-in alignment model lookup
-            align_language = language
-        else:
-            align_language = align_model_name
         
         # Cache alignment model at module level (#33)
         global _align_model_cache
-        align_cache_key = f"{align_language}_{device}"
+        align_cache_key = f"{language}_{align_model_name}_{device}"
         if align_cache_key not in _align_model_cache:
-            logger.info(f"Loading alignment model for language: {language} ({align_language})")
+            logger.info(
+                f"Loading alignment model for language: {language}"
+                + (f" (model: {align_model_name})" if align_model_name else "")
+            )
             _align_model_cache[align_cache_key] = whisperx.load_align_model(
-                language_code=align_language,
+                language_code=language,
                 device=device,
+                model_name=align_model_name,
             )
         else:
             logger.debug(f"Reusing cached alignment model for: {align_language}")

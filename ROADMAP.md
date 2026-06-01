@@ -264,13 +264,11 @@ Pipeline test on fasit1 (27-min Håvard Kristiansen recording) with auto-detecti
 | Model routing | Selected `NbAiLab/nb-whisper-large-verbatim` for "no" | ✅ Correct |
 | Transcription | 55 segments, 3,225 hyp words vs 2,810 ref words | ✅ Completed |
 | WER | 53.7% (684 sub, 205 del, 620 ins) | ⚠️ Comparable to previous runs |
-| Alignment | `nb-wav2vec2-1b-bokmaal-v2` not recognized by WhisperX | ❌ Graceful skip, no word scores |
-| Dialect detection | `DialectPack.__init__() missing 1 required arg: 'data'` | ❌ Needs fix |
+| Alignment | `NbAiLab/nb-wav2vec2-1b-bokmaal-v2` loaded via `model_name` param | ✅ Fixed (#49) |
+| Dialect detection | Auto-detected "vestlandsk" from text | ✅ Fixed (#48) |
 | Detection report | Exported with detected/resolved language, models, fallbacks | ✅ Working |
 
-**Known issues to fix:**
-1. **Alignment model not recognized** — `NbAiLab/nb-wav2vec2-1b-bokmaal-v2` is passed as the language code to WhisperX alignment instead of just `"no"`. The model registry returns the full model name, but WhisperX expects a language code (e.g., `"no"`) and looks up the default alignment model internally.
-2. **Dialect detection crash** — `DialectPack.__init__()` is called without the `data` argument. The pipeline needs to pass the loaded dialect data or use the class method correctly.
+**Known issues:** Both Phase 11 bugs (#48, #49) have been fixed. See ISSUES.md for details.
 
 ---
 
