@@ -199,8 +199,9 @@ class Transcriber:
                 asr_options["suppress_tokens"] = tc["suppress_tokens"]
             
             # Use language from config (set by pipeline based on detection or CLI override).
-            # Default to Norwegian if not specified.
-            language = tc.get("language", "no")
+            # Default to the registry's default language if not specified.
+            from .model_registry import get_default_language
+            language = tc.get("language", get_default_language())
             load_kwargs = {
                 "device": device,
                 "compute_type": compute_type,
@@ -238,7 +239,7 @@ class Transcriber:
         self,
         audio: np.ndarray,
         segments: List[Dict],
-        language: str = "no",
+        language: Optional[str] = None,
     ) -> Dict:
         """
         Fallback alignment using whisperx's standalone wav2vec2 alignment.
@@ -257,6 +258,11 @@ class Transcriber:
         """
         import whisperx
         import torch
+        
+        # Resolve default language if not specified
+        if language is None:
+            from .model_registry import get_default_language
+            language = get_default_language()
         
         # Determine device
         if torch.cuda.is_available():
@@ -348,7 +354,7 @@ class Transcriber:
     def transcribe(
         self,
         audio_path: Path,
-        language: str = "no",
+        language: Optional[str] = None,
         word_timestamps: bool = True,
     ) -> List[TranscriptionSegment]:
         """
@@ -364,7 +370,12 @@ class Transcriber:
         """
         self._load_model()
         
-        logger.info(f"Transcribing: {audio_path.name} with {self.model_name}")
+        # Resolve default language if not specified
+        if language is None:
+            from .model_registry import get_default_language
+            language = get_default_language()
+        
+        logger.info(f"Transcribing: {audio_path.name} with {self.model_name} (language: {language})")
         
         try:
             import whisperx

@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 12: Language pack abstraction** — new `src/language_pack.py` module providing a `LanguagePack` class that wraps model config, dialect packs, normalization hints, and vocabulary for any language. The pipeline is now parameterized by language rather than hardcoded to `"no"`. (ROADMAP.md Phase 12)
+  - **`LanguagePack` class** — dataclass with `language_code`, `model_config` (from model registry), `dialect_packs`, `normalization_hints`, `vocabulary`, `script_direction`, `written_standards`. Single source of truth for language-specific configuration.
+  - **`get_language_pack()`** — cached factory function that builds a `LanguagePack` from the model registry. Results cached via `functools.lru_cache`.
+  - **`resolve_language_pack()`** — confidence-based routing: ≥0.8 high confidence, ≥0.5 medium, <0.5 falls back to default language pack.
+  - **`get_available_language_packs()`** — returns list of all supported language codes from the model registry.
+  - **`get_default_language_pack()`** — returns the default language pack (Norwegian).
+  - **`get_available_dialects_for_language()`** — returns available dialects for a given language pack.
+- **All hardcoded `"no"` references removed** — 8 files modified to use configurable defaults:
+  - `src/model_registry.py` — added `get_default_language()` returning `"no"`. Added `script_direction`, `written_standards`, `use_norwegian_normalization`, `use_dialect_confidence_pairs`, `default_fallback` fields to all 5 language entries. `resolve_language()` now uses `get_default_language()`.
+  - `src/analyze.py` — added `_get_default_language()` helper. `detect_language()` uses it instead of hardcoded `"no"` in 3 fallback locations.
+  - `src/transcribe.py` — three `language="no"` defaults changed to `Optional[str] = None` with runtime resolution via `get_default_language()`. Config language default also uses `get_default_language()`.
+  - `scripts/run_pipeline.py` — two `in ("no", "nn")` gates replaced with language pack dialect support checks. Config fallback uses `get_default_language()`.
+  - `src/vocabulary.py` — `CommonNorwegianVocabulary` renamed to `CommonVocabulary` (with backward compat alias). `load_vocabulary()` accepts `language` parameter. Added legacy `norwegian_vocabulary.json` fallback path.
+  - `src/normalize.py` — created `normalize_text()` as language-agnostic replacement. `normalize_norwegian_text()` kept as backward-compat alias. `normalize_transcription_segments()` accepts `language` parameter. Report header changed from "NORWEGIAN TEXT NORMALIZATION REPORT" to "TEXT NORMALIZATION REPORT".
+  - `src/confidence.py` — `compute_priority()` accepts `language` parameter. Norwegian-specific hard-rules (rules 12, 15, 18, 23, 24) wrapped in `is_norwegian` conditional. `extract_confidence_signals()` accepts `language` parameter.
+  - `src/language_pack.py` — new module (see above).
 - **Per-dialect VAD parameter presets** — each dialect pack (`data/dialects/*.json`) now includes a `vad_presets` section with dialect-specific `vad_onset`, `vad_offset`, and `chunk_size` values. Northern Norwegian uses lower onset (0.300) for fast staccato speech; Østlandsk uses higher onset (0.400) since it's closest to standard Bokmål. `DialectPack` gains `get_vad_presets()`, `apply_vad_presets(config)` methods. Pipeline applies VAD presets when dialect is known (explicit `--dialect` or auto-detected from previous file in batch). (ROADMAP.md Phase 11 — per-dialect VAD tuning)
 - **Per-dialect decoding parameter presets** — each dialect pack now includes a `decoding_presets` section with dialect-specific `beam_size`, `temperatures`, `repetition_penalty`, `no_repeat_ngram_size`, and `condition_on_previous_text`. All dialects default to whisperx defaults (temperature fallback) since that's the best known config. `DialectPack` gains `get_decoding_presets()`, `apply_decoding_presets(config)` methods. Pipeline applies decoding presets when dialect is known. (ROADMAP.md Phase 11 — per-dialect decoding parameters)
 - **Batch-mode optimization** — `process_batch()` now runs fast language detection on all files first (parallel), groups files by resolved language, then processes each group sequentially (model caches reused within group). Model caches are cleared between language groups. When `--language` is forced or `--no-auto-detect` is set, grouping is skipped and all files processed in sequence. (ROADMAP.md Phase 11 — batch-mode optimization)

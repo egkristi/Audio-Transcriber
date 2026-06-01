@@ -192,7 +192,8 @@ class AudioTranscriberPipeline:
             
             if no_auto_detect:
                 # Use config default language
-                effective_language = effective_language or self.config.get("language", "no")
+                from src.model_registry import get_default_language
+                effective_language = effective_language or self.config.get("language", get_default_language())
                 logger.info(f"Auto-detection disabled, using language: {effective_language}")
             else:
                 # Resolve language from detection + optional override
@@ -281,7 +282,16 @@ class AudioTranscriberPipeline:
                 
                 # Apply per-dialect VAD and decoding presets if dialect is known
                 # (either explicitly provided or auto-detected from a previous file in batch)
-                if dialect and effective_language in ("no", "nn"):
+                # Only applies to languages with dialect support in their language pack.
+                _has_dialect_support = False
+                if dialect:
+                    try:
+                        from src.language_pack import get_language_pack
+                        _pack = get_language_pack(effective_language)
+                        _has_dialect_support = _pack.has_dialects
+                    except Exception:
+                        _has_dialect_support = effective_language in ("no", "nn")
+                if dialect and _has_dialect_support:
                     try:
                         dialect_pack = DialectPack.load(dialect)
                         if dialect_pack.vad_presets:
@@ -403,8 +413,15 @@ class AudioTranscriberPipeline:
                     )
                 
                 # Dialect auto-detection from transcribed text
-                # Only relevant for Norwegian languages
-                if not no_auto_detect and effective_language in ("no", "nn") and primary_segments:
+                # Only relevant for languages with dialect support
+                _has_dialect_support = False
+                try:
+                    from src.language_pack import get_language_pack
+                    _pack = get_language_pack(effective_language)
+                    _has_dialect_support = _pack.has_dialects
+                except Exception:
+                    _has_dialect_support = effective_language in ("no", "nn")
+                if not no_auto_detect and _has_dialect_support and primary_segments:
                     logger.info("\nSTEP: Dialect Auto-Detection")
                     try:
                         full_text = " ".join(s.text for s in primary_segments if s.text)

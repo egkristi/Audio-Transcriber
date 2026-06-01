@@ -283,7 +283,8 @@ class ConfidenceExtractor:
     
     def compute_priority(
         self,
-        segments: List[SegmentConfidence]
+        segments: List[SegmentConfidence],
+        language: Optional[str] = None,
     ) -> List[SegmentConfidence]:
         """
         Compute priority scores for all segments.
@@ -293,42 +294,60 @@ class ConfidenceExtractor:
         
         Args:
             segments: List of SegmentConfidence objects with signals populated.
+            language: Language code for language-specific hard-rules.
+                     If None or Norwegian ("no", "nn"), applies Norwegian rules.
         
         Returns:
             Same segments with priority_score and priority_rank set.
         """
-        # Common Norwegian filler/function words to exclude from repetition checks.
+        # Determine if Norwegian-specific hard-rules should be applied
+        is_norwegian = language is None or language in ("no", "nn")
+        
+        # Common filler/function words to exclude from repetition checks.
         # These appear frequently in conversational speech and would otherwise
         # trigger false positives in both per-segment and cross-segment detection.
-        filler_words = {"ja", "nei", "da", "jo", "vel", "jo", "nå", "så",
-                        "å", "og", "men", "for", "at", "til", "av", "med",
-                        "på", "i", "er", "det", "den", "de", "du", "han",
-                        "hun", "vi", "dere", "man", "sin", "seg", "kan",
-                        "skal", "vil", "må", "har", "hadde", "ble", "blir",
-                        "være", "vært", "bli", "kommer", "går", "sier",
-                        "tror", "vet", "ser", "litt", "bare", "også",
-                        "ikke", "hva", "hvor", "hvordan", "hvorfor",
-                        "når", "hvilken", "hvem", "hvis", "fordi"}
-        # Extended set for cross-segment repetition detection — includes common
-        # pronouns, auxiliary verbs, and high-frequency Norwegian words that
-        # appear naturally across many segments in conversational speech.
-        cross_segment_filler = filler_words | {
-            "jeg", "meg", "deg", "seg", "være", "vært", "blitt", "fått", "hatt",
-            "sagt", "gjort", "tatt", "sett", "hørt", "visst", "kunnet", "måttet",
-            "skulle", "ville", "kunne", "burde", "måtte", "få", "får", "fikk",
-            "gi", "gir", "ga", "gitt", "si", "sier", "sa", "sagt",
-            "gå", "går", "gikk", "gått", "komme", "kommer", "kom", "kommet",
-            "ta", "tar", "tok", "tatt", "se", "ser", "så", "sett",
-            "ha", "har", "hadde", "hatt", "vite", "vet", "visste", "visst",
-            "tro", "tror", "trodd", "tenke", "tenker", "tenkte",
-            "noe", "noen", "noe", "noen", "litt", "mye", "masse",
-            "sånn", "slik", "slike", "samme", "annen", "annet", "andre",
-            "hver", "alle", "begge", "ingen", "ingenting",
-            "opp", "ned", "ut", "inn", "bort", "fram", "tilbake",
-            "her", "der", "hit", "dit", "hjem", "ute", "inne",
-            "alltid", "aldri", "ofte", "sjelden", "nettopp", "akkurat",
-            "kanskje", "sikkert", "egentlig", "faktisk", "nemlig", "riktig",
-        }
+        # Norwegian-specific set when language is Norwegian, otherwise a minimal set.
+        if is_norwegian:
+            filler_words = {"ja", "nei", "da", "jo", "vel", "jo", "nå", "så",
+                            "å", "og", "men", "for", "at", "til", "av", "med",
+                            "på", "i", "er", "det", "den", "de", "du", "han",
+                            "hun", "vi", "dere", "man", "sin", "seg", "kan",
+                            "skal", "vil", "må", "har", "hadde", "ble", "blir",
+                            "være", "vært", "bli", "kommer", "går", "sier",
+                            "tror", "vet", "ser", "litt", "bare", "også",
+                            "ikke", "hva", "hvor", "hvordan", "hvorfor",
+                            "når", "hvilken", "hvem", "hvis", "fordi"}
+            # Extended set for cross-segment repetition detection
+            cross_segment_filler = filler_words | {
+                "jeg", "meg", "deg", "seg", "være", "vært", "blitt", "fått", "hatt",
+                "sagt", "gjort", "tatt", "sett", "hørt", "visst", "kunnet", "måttet",
+                "skulle", "ville", "kunne", "burde", "måtte", "få", "får", "fikk",
+                "gi", "gir", "ga", "gitt", "si", "sier", "sa", "sagt",
+                "gå", "går", "gikk", "gått", "komme", "kommer", "kom", "kommet",
+                "ta", "tar", "tok", "tatt", "se", "ser", "så", "sett",
+                "ha", "har", "hadde", "hatt", "vite", "vet", "visste", "visst",
+                "tro", "tror", "trodd", "tenke", "tenker", "tenkte",
+                "noe", "noen", "noe", "noen", "litt", "mye", "masse",
+                "sånn", "slik", "slike", "samme", "annen", "annet", "andre",
+                "hver", "alle", "begge", "ingen", "ingenting",
+                "opp", "ned", "ut", "inn", "bort", "fram", "tilbake",
+                "her", "der", "hit", "dit", "hjem", "ute", "inne",
+                "alltid", "aldri", "ofte", "sjelden", "nettopp", "akkurat",
+                "kanskje", "sikkert", "egentlig", "faktisk", "nemlig", "riktig",
+            }
+        else:
+            # Minimal filler set for non-Norwegian languages
+            filler_words = {"the", "a", "an", "and", "or", "but", "in", "on",
+                            "at", "to", "for", "of", "with", "by", "from",
+                            "is", "are", "was", "were", "be", "been", "being",
+                            "have", "has", "had", "do", "does", "did",
+                            "will", "would", "can", "could", "shall", "should",
+                            "may", "might", "must", "i", "you", "he", "she",
+                            "it", "we", "they", "me", "him", "her", "us", "them",
+                            "this", "that", "these", "those", "yes", "no", "ok",
+                            "well", "so", "just", "like", "really", "very"}
+            cross_segment_filler = filler_words
+        
         import re as _re
         
         for seg in segments:
@@ -485,18 +504,19 @@ class ConfidenceExtractor:
                 scores.append(0.3)
                 flags.append("very_many_words")
             
-            # 15. HARD RULE: Norwegian normalization issues
+            # 15. HARD RULE: Norwegian normalization issues (Norwegian only)
             # "aa" should be "å", "ae" should be "æ", "oe" should be "ø"
             # These are common Whisper errors on Norwegian
-            if re.search(r'\baa\b', seg.text.lower()):
-                scores.append(0.25)
-                flags.append("possible_aa_not_aa")
-            if re.search(r'\bae\b', seg.text.lower()):
-                scores.append(0.25)
-                flags.append("possible_ae_not_ae")
-            if re.search(r'\boe\b', seg.text.lower()):
-                scores.append(0.25)
-                flags.append("possible_oe_not_oe")
+            if is_norwegian:
+                if re.search(r'\baa\b', seg.text.lower()):
+                    scores.append(0.25)
+                    flags.append("possible_aa_not_aa")
+                if re.search(r'\bae\b', seg.text.lower()):
+                    scores.append(0.25)
+                    flags.append("possible_ae_not_ae")
+                if re.search(r'\boe\b', seg.text.lower()):
+                    scores.append(0.25)
+                    flags.append("possible_oe_not_oe")
             
             # 16. HARD RULE: Formatting issues
             # Missing space after punctuation (e.g., "ja,men")
@@ -510,18 +530,19 @@ class ConfidenceExtractor:
                 scores.append(0.4)
                 flags.append("unusual_characters")
             
-            # 18. HARD RULE: Suspicious patterns
-            # "hæ" used as filler (common in Norwegian but often hallucinated)
-            hae_count = text_lower.count('hæ')
-            if hae_count >= 3:
-                scores.append(0.2)
-                flags.append("excessive_filler_hae")
-            
-            # "ja" repeated excessively
-            ja_count = text_lower.count(' ja ')
-            if ja_count >= 4:
-                scores.append(0.2)
-                flags.append("excessive_filler_ja")
+            # 18. HARD RULE: Suspicious patterns (Norwegian-specific)
+            if is_norwegian:
+                # "hæ" used as filler (common in Norwegian but often hallucinated)
+                hae_count = text_lower.count('hæ')
+                if hae_count >= 3:
+                    scores.append(0.2)
+                    flags.append("excessive_filler_hae")
+                
+                # "ja" repeated excessively
+                ja_count = text_lower.count(' ja ')
+                if ja_count >= 4:
+                    scores.append(0.2)
+                    flags.append("excessive_filler_ja")
             
             # 19. HARD RULE: Incomplete sentence ending
             # Segment ending mid-word or with hyphen = likely truncation
@@ -551,53 +572,54 @@ class ConfidenceExtractor:
                     scores.append(0.15)
                     flags.append("lowercase_start")
             
-            # 23. HARD RULE: Dialect-standard mismatch detection
+            # 23. HARD RULE: Dialect-standard mismatch detection (Norwegian only)
             # Whisper may silently normalize Northern Norwegian dialect to standard
             # Eastern Norwegian. These "confidently wrong" substitutions get high
             # decoder confidence but are incorrect for the target dialect.
             # Flag segments where standard forms appear but dialect expected.
             # Dialect data is loaded from dialect packs (data/dialects/*.json)
             # with fallback to hardcoded values.
-            dialect_pairs, dialect_words_set, common_function_words = _get_dialect_data()
-            dialect_standard_count = 0
-            dialect_expected_forms = []
-            for standard, dialect in dialect_pairs:
-                if standard in common_function_words:
-                    continue  # Skip common function words that appear everywhere
-                if re.search(r'\b' + re.escape(standard) + r'\b', text_lower):
-                    dialect_standard_count += 1
-                    dialect_expected_forms.append(f"{standard}→{dialect}")
-            if dialect_standard_count >= 2:
-                # Multiple standard forms where dialect expected — likely normalization
-                boost = min(0.6, 0.15 * dialect_standard_count)
-                scores.append(boost)
-                flags.append(f"dialect_normalized:{','.join(dialect_expected_forms[:5])}")
-            elif dialect_standard_count == 1:
-                # Single instance — milder flag
-                scores.append(0.15)
-                flags.append(f"dialect_normalized:{','.join(dialect_expected_forms[:3])}")
-            
-            # 24. HARD RULE: Dialect form detection (mixed dialect-standard)
-            # If a segment contains BOTH dialect and standard forms of the same word,
-            # it indicates Whisper is confused about the dialect register.
-            dialect_words_found = [w for w in word_list if w in dialect_words_set]
-            if dialect_words_found:
-                # Check for mixed register: dialect + standard of same concept
-                has_jeg = "jeg" in word_list
-                has_ikke = "ikke" in word_list
-                has_hva = "hva" in word_list
-                has_standard_pronoun = has_jeg or "meg" in word_list or "deg" in word_list
-                has_dialect_pronoun = "æ" in word_list or "mæ" in word_list or "dæ" in word_list
-                if has_standard_pronoun and has_dialect_pronoun:
-                    scores.append(0.35)
-                    flags.append("mixed_dialect_register")
-                if has_ikke and ("ikkje" in word_list or "itte" in word_list):
-                    scores.append(0.3)
-                    flags.append("mixed_negation")
-                # General dialect presence — mild flag for awareness
-                if len(dialect_words_found) >= 2:
-                    scores.append(0.1)
-                    flags.append(f"dialect_present:{','.join(dialect_words_found[:5])}")
+            if is_norwegian:
+                dialect_pairs, dialect_words_set, common_function_words = _get_dialect_data()
+                dialect_standard_count = 0
+                dialect_expected_forms = []
+                for standard, dialect in dialect_pairs:
+                    if standard in common_function_words:
+                        continue  # Skip common function words that appear everywhere
+                    if re.search(r'\b' + re.escape(standard) + r'\b', text_lower):
+                        dialect_standard_count += 1
+                        dialect_expected_forms.append(f"{standard}→{dialect}")
+                if dialect_standard_count >= 2:
+                    # Multiple standard forms where dialect expected — likely normalization
+                    boost = min(0.6, 0.15 * dialect_standard_count)
+                    scores.append(boost)
+                    flags.append(f"dialect_normalized:{','.join(dialect_expected_forms[:5])}")
+                elif dialect_standard_count == 1:
+                    # Single instance — milder flag
+                    scores.append(0.15)
+                    flags.append(f"dialect_normalized:{','.join(dialect_expected_forms[:3])}")
+                
+                # 24. HARD RULE: Dialect form detection (mixed dialect-standard)
+                # If a segment contains BOTH dialect and standard forms of the same word,
+                # it indicates Whisper is confused about the dialect register.
+                dialect_words_found = [w for w in word_list if w in dialect_words_set]
+                if dialect_words_found:
+                    # Check for mixed register: dialect + standard of same concept
+                    has_jeg = "jeg" in word_list
+                    has_ikke = "ikke" in word_list
+                    has_hva = "hva" in word_list
+                    has_standard_pronoun = has_jeg or "meg" in word_list or "deg" in word_list
+                    has_dialect_pronoun = "æ" in word_list or "mæ" in word_list or "dæ" in word_list
+                    if has_standard_pronoun and has_dialect_pronoun:
+                        scores.append(0.35)
+                        flags.append("mixed_dialect_register")
+                    if has_ikke and ("ikkje" in word_list or "itte" in word_list):
+                        scores.append(0.3)
+                        flags.append("mixed_negation")
+                    # General dialect presence — mild flag for awareness
+                    if len(dialect_words_found) >= 2:
+                        scores.append(0.1)
+                        flags.append(f"dialect_present:{','.join(dialect_words_found[:5])}")
             
             # Compute unweighted average priority
             if scores:
@@ -815,6 +837,7 @@ def extract_confidence_signals(
     comparison_results: Optional[List[Dict]] = None,
     metadata: Optional[Dict] = None,
     config: Optional[dict] = None,
+    language: Optional[str] = None,
 ) -> List[SegmentConfidence]:
     """
     Convenience function: extract all confidence signals and compute priorities.
@@ -825,6 +848,8 @@ def extract_confidence_signals(
         comparison_results: Optional comparison results from compare.py
         metadata: Optional audio metadata from analyze.py
         config: Optional configuration dict
+        language: Language code for language-specific hard-rules.
+                 If None or Norwegian, applies Norwegian rules.
     
     Returns:
         List of SegmentConfidence with priority scores computed.
@@ -847,6 +872,6 @@ def extract_confidence_signals(
         )
     
     # Step 4: Compute priorities
-    confidence_segments = extractor.compute_priority(confidence_segments)
+    confidence_segments = extractor.compute_priority(confidence_segments, language=language)
     
     return confidence_segments

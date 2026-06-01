@@ -171,12 +171,22 @@ def _get_language_model():
     return _language_model
 
 
+def _get_default_language() -> str:
+    """
+    Get the default language code from the model registry.
+
+    Returns the language marked as default_fallback (currently Norwegian 'no').
+    """
+    from .model_registry import get_default_language
+    return get_default_language()
+
+
 def detect_language(file_path: Path) -> tuple:
     """
     Detect language using faster-whisper's built-in language detection.
     
     Uses the tiny model (cached across calls) and only processes the first
-    30 seconds of audio for speed. Falls back to Norwegian ('no') on failure.
+    30 seconds of audio for speed. Falls back to the default language on failure.
     
     Returns:
         Tuple of (language_code, confidence) where confidence is 0.0-1.0.
@@ -193,19 +203,21 @@ def detect_language(file_path: Path) -> tuple:
 
         model = _get_language_model()
         if model is None:
-            return "no", 0.0
+            return _get_default_language(), 0.0
 
         # faster-whisper transcribe returns (segments_generator, info)
         segments, info = model.transcribe(audio, beam_size=1)
         # Consume generator to ensure info is populated
         next(iter(segments), None)
-        detected = info.language if info and info.language else "no"
+        default_lang = _get_default_language()
+        detected = info.language if info and info.language else default_lang
         confidence = info.language_probability if info else 0.0
         logger.info(f"Detected language for {file_path.name}: {detected} (confidence: {confidence:.2f})")
         return detected, confidence
     except Exception as e:
-        logger.warning(f"Language detection failed for {file_path}: {e}, defaulting to 'no'")
-        return "no", 0.0
+        default_lang = _get_default_language()
+        logger.warning(f"Language detection failed for {file_path}: {e}, defaulting to '{default_lang}'")
+        return default_lang, 0.0
 
 
 def detect_speech_vad(audio_data: np.ndarray, sample_rate: int) -> bool:

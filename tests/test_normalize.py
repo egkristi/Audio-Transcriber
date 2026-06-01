@@ -224,7 +224,7 @@ class TestExportNormalizationReport:
         result = export_normalization_report(corrections, output_path)
         assert result.exists()
         content = output_path.read_text(encoding="utf-8")
-        assert "NORWEGIAN TEXT NORMALIZATION REPORT" in content
+        assert "TEXT NORMALIZATION REPORT" in content
         assert "stuttering" in content
 
     def test_empty_corrections(self, temp_dir):

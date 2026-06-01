@@ -286,7 +286,7 @@ Pipeline test on fasit1 (27-min Håvard Kristiansen recording) with auto-detecti
 
 > Vision step 2–3: generalize the language/dialect pack structure, then add Nordic languages one at a time — each gated on its own fasit + WER baseline before it's considered "supported".
 
-- [ ] **Language pack abstraction** — formalize a `LanguagePack` (transcription model, alignment/wav2vec2 model, language code, vocabulary, dialect packs, normalization rules) so the pipeline is parameterized by language rather than hardcoded to `"no"`. Remove the `language="no"` hardcodes in `transcribe.py`/`analyze.py`.
+- [x] **Language pack abstraction** — formalized a `LanguagePack` (transcription model, alignment/wav2vec2 model, language code, vocabulary, dialect packs, normalization rules) so the pipeline is parameterized by language rather than hardcoded to `"no"`. Removed all `language="no"` hardcodes across 8 files. New `src/language_pack.py` module with `LanguagePack` class, `get_language_pack()`, `resolve_language_pack()`, `get_available_language_packs()`, `get_default_language_pack()`. (2026-06-02)
 - [ ] **Top-level language auto-detection & routing** — use the existing faster-whisper language detector (already in `analyze.py`) to route each file to the right language pack instead of always falling back to `"no"`.
 - [ ] **Swedish** — `KBLab/kb-whisper-large` (or current best Swedish ASR) + Swedish wav2vec2 alignment + dialect packs (e.g. Skånska, Norrländska, Finlandssvenska, Gotländska).
 - [ ] **Danish** — best-available Danish Whisper/ASR + Danish alignment + dialect packs (Jysk, Fynsk, Bornholmsk, etc.).

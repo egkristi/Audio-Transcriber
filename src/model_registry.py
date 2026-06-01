@@ -45,6 +45,11 @@ _MODEL_REGISTRY: Dict[str, Dict] = {
         ],
         "language_name": "Norwegian",
         "multilingual_fallback": "openai/whisper-large-v3",
+        "script_direction": "ltr",
+        "written_standards": ["no", "nn"],
+        "use_norwegian_normalization": True,
+        "use_dialect_confidence_pairs": True,
+        "default_fallback": True,
     },
     "nn": {
         "transcription": "NbAiLab/nb-whisper-large-verbatim",
@@ -59,6 +64,11 @@ _MODEL_REGISTRY: Dict[str, Dict] = {
         ],
         "language_name": "Norwegian Nynorsk",
         "multilingual_fallback": "openai/whisper-large-v3",
+        "script_direction": "ltr",
+        "written_standards": ["nn", "no"],
+        "use_norwegian_normalization": True,
+        "use_dialect_confidence_pairs": True,
+        "default_fallback": False,
     },
     "sv": {
         "transcription": "KBLab/kb-whisper-large",
@@ -67,6 +77,11 @@ _MODEL_REGISTRY: Dict[str, Dict] = {
         "dialects": [],
         "language_name": "Swedish",
         "multilingual_fallback": "openai/whisper-large-v3",
+        "script_direction": "ltr",
+        "written_standards": ["sv"],
+        "use_norwegian_normalization": False,
+        "use_dialect_confidence_pairs": False,
+        "default_fallback": False,
     },
     "da": {
         "transcription": "openai/whisper-large-v3",
@@ -75,6 +90,11 @@ _MODEL_REGISTRY: Dict[str, Dict] = {
         "dialects": [],
         "language_name": "Danish",
         "multilingual_fallback": "openai/whisper-large-v3",
+        "script_direction": "ltr",
+        "written_standards": ["da"],
+        "use_norwegian_normalization": False,
+        "use_dialect_confidence_pairs": False,
+        "default_fallback": False,
     },
     "en": {
         "transcription": "openai/whisper-large-v3",
@@ -83,6 +103,11 @@ _MODEL_REGISTRY: Dict[str, Dict] = {
         "dialects": [],
         "language_name": "English",
         "multilingual_fallback": "openai/whisper-large-v3",
+        "script_direction": "ltr",
+        "written_standards": ["en"],
+        "use_norwegian_normalization": False,
+        "use_dialect_confidence_pairs": False,
+        "default_fallback": False,
     },
 }
 
@@ -94,6 +119,11 @@ _DEFAULT_FALLBACK = {
     "dialects": [],
     "language_name": "Unknown",
     "multilingual_fallback": "openai/whisper-large-v3",
+    "script_direction": "ltr",
+    "written_standards": [],
+    "use_norwegian_normalization": False,
+    "use_dialect_confidence_pairs": False,
+    "default_fallback": False,
 }
 
 # Language detection confidence thresholds
@@ -126,6 +156,19 @@ def get_model_config(language_code: str) -> Dict:
 def get_available_languages() -> List[str]:
     """Get list of language codes with registered model configurations."""
     return sorted(_MODEL_REGISTRY.keys())
+
+
+def get_default_language() -> str:
+    """
+    Get the default fallback language code.
+
+    Returns the language marked with default_fallback=True in the registry.
+    Currently Norwegian Bokmål ("no").
+    """
+    for code, config in _MODEL_REGISTRY.items():
+        if config.get("default_fallback", False):
+            return code
+    return "no"  # Hardcoded last resort if registry is empty
 
 
 def get_alignment_model(language_code: str, written_standard: Optional[str] = None) -> Optional[str]:
@@ -194,8 +237,9 @@ def resolve_language(
         )
         return detected_language
 
+    default_lang = get_default_language()
     logger.warning(
         f"Language detection confidence too low ({confidence:.2f}) for "
-        f"'{detected_language}', falling back to 'no' (Norwegian)"
+        f"'{detected_language}', falling back to '{default_lang}'"
     )
-    return "no"
+    return default_lang

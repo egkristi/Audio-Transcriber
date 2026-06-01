@@ -290,12 +290,18 @@ class VocabularyManager:
         return suggestions
 
 
-class CommonNorwegianVocabulary:
-    """Common Norwegian-specific vocabulary and terminology."""
+class CommonVocabulary:
+    """Common vocabulary and terminology, language-agnostic.
     
+    Provides domain-specific vocabulary, proper nouns, and dialect support
+    across all supported languages. Language-specific data is loaded from
+    language packs and dialect packs rather than hardcoded.
+    """
+    
+    # Domain-specific vocabulary shared across languages
     COMMON_DOMAINS = {
         "medical": [
-            "pasient", "diagn ose", "behandling", "medikament",
+            "pasient", "diagnose", "behandling", "medikament",
             "sykepleier", "lege", "sykehus", "infeksjon"
         ],
         "legal": [
@@ -312,6 +318,7 @@ class CommonNorwegianVocabulary:
         ]
     }
     
+    # Common proper nouns (Norwegian-focused, extendable per language)
     COMMON_PROPER_NOUNS = [
         "Oslo", "Bergen", "Stavanger", "Tromsø", "Trondheim",
         "Norge", "Sverige", "Danmark", "Finland",
@@ -396,7 +403,7 @@ class CommonNorwegianVocabulary:
         words = set(text_lower.split())
         
         scores = {}
-        for region, markers in CommonNorwegianVocabulary.DIALECT_MARKERS_FALLBACK.items():
+        for region, markers in CommonVocabulary.DIALECT_MARKERS_FALLBACK.items():
             matches = words & markers["words"]
             if matches:
                 score = len(matches) * markers["weight"]
@@ -415,7 +422,7 @@ class CommonNorwegianVocabulary:
     @staticmethod
     def get_domain_vocabulary(domain: str) -> List[str]:
         """Get vocabulary for specific domain."""
-        return CommonNorwegianVocabulary.COMMON_DOMAINS.get(domain, [])
+        return CommonVocabulary.COMMON_DOMAINS.get(domain, [])
     
     @staticmethod
     def get_dialect_vocabulary(dialect: str = "northern_norwegian") -> List[str]:
@@ -443,7 +450,7 @@ class CommonNorwegianVocabulary:
             pass
         
         # Fallback to hardcoded vocabulary
-        categories = CommonNorwegianVocabulary.DIALECT_VOCABULARY_FALLBACK.get(dialect, {})
+        categories = CommonVocabulary.DIALECT_VOCABULARY_FALLBACK.get(dialect, {})
         words: List[str] = []
         for category_words in categories.values():
             words.extend(category_words)
@@ -453,6 +460,7 @@ class CommonNorwegianVocabulary:
     def create_manager(
         domain: Optional[str] = None,
         dialect: Optional[str] = None,
+        language: Optional[str] = None,
     ) -> VocabularyManager:
         """Create vocabulary manager with domain and/or dialect vocabulary.
         
@@ -460,27 +468,49 @@ class CommonNorwegianVocabulary:
             domain: Optional domain for domain-specific vocabulary.
             dialect: Optional dialect region (e.g. "northern_norwegian")
                      to inject dialect words into Whisper's prompt.
+            language: Optional language code to load language-specific
+                     vocabulary (e.g. "no" for Norwegian proper nouns).
         
         Returns:
             Initialized VocabularyManager.
         """
         manager = VocabularyManager()
         
-        # Add proper nouns
-        manager.add_words(
-            CommonNorwegianVocabulary.COMMON_PROPER_NOUNS,
-            context="proper noun"
-        )
+        # Add proper nouns (language-specific if available)
+        if language:
+            try:
+                from .language_pack import get_language_pack
+                pack = get_language_pack(language)
+                # Load proper nouns from data/<language>_vocabulary.json
+                vocab_path = Path(__file__).parent.parent / "data" / f"{language}_vocabulary.json"
+                if vocab_path.exists():
+                    data = json.loads(vocab_path.read_text())
+                    if isinstance(data, dict) and "vocabulary" in data:
+                        for item in data.get("vocabulary", []):
+                            manager.add_word(item, context="proper noun")
+                    elif isinstance(data, list):
+                        for item in data:
+                            manager.add_word(item, context="proper noun")
+                    logger.info(f"Loaded {len(manager.vocabulary)} vocabulary items for '{language}'")
+            except Exception:
+                pass
+        
+        # Fallback: add default proper nouns
+        if not manager.vocabulary:
+            manager.add_words(
+                CommonVocabulary.COMMON_PROPER_NOUNS,
+                context="proper noun"
+            )
         
         # Add domain vocabulary if specified
         if domain:
-            vocab = CommonNorwegianVocabulary.get_domain_vocabulary(domain)
+            vocab = CommonVocabulary.get_domain_vocabulary(domain)
             for word in vocab:
                 manager.add_word(word, context=domain)
         
         # Add dialect vocabulary if specified
         if dialect:
-            dialect_words = CommonNorwegianVocabulary.get_dialect_vocabulary(dialect)
+            dialect_words = CommonVocabulary.get_dialect_vocabulary(dialect)
             for word in dialect_words:
                 manager.add_word(word, context=f"dialect:{dialect}")
             logger.info(
@@ -491,11 +521,16 @@ class CommonNorwegianVocabulary:
         return manager
 
 
+# Backward compatibility alias
+CommonNorwegianVocabulary = CommonVocabulary
+
+
 def load_vocabulary(
     vocab_file: Optional[Path] = None,
     domain: Optional[str] = None,
     dialect: Optional[str] = None,
-    use_default_norwegian: bool = True
+    use_default_norwegian: bool = True,
+    language: Optional[str] = None,
 ) -> VocabularyManager:
     """
     Load or create vocabulary manager.
@@ -508,6 +543,9 @@ def load_vocabulary(
                  Whisper's initial_prompt to improve recognition.
         use_default_norwegian: Load default Norwegian vocabulary (places, names,
             institutions) when no custom file is provided. Default True.
+            Deprecated in favor of language parameter.
+        language: Language code to load language-specific vocabulary.
+                  If None, falls back to use_default_norwegian behavior.
         
     Returns:
         Initialized VocabularyManager
@@ -518,7 +556,7 @@ def load_vocabulary(
         
         # Add dialect vocabulary on top of custom file if specified
         if dialect:
-            dialect_words = CommonNorwegianVocabulary.get_dialect_vocabulary(dialect)
+            dialect_words = CommonVocabulary.get_dialect_vocabulary(dialect)
             for word in dialect_words:
                 manager.add_word(word, context=f"dialect:{dialect}")
             logger.info(
@@ -528,37 +566,47 @@ def load_vocabulary(
         
         return manager
     
-    # Load default Norwegian vocabulary
-    if use_default_norwegian:
-        default_vocab = Path(__file__).parent.parent / "data" / "norwegian_vocabulary.json"
-        if default_vocab.exists():
-            logger.info(f"Loading default Norwegian vocabulary ({default_vocab})")
-            manager = VocabularyManager(default_vocab)
-            
-            # Also add domain vocabulary if specified
-            if domain:
-                domain_vocab = CommonNorwegianVocabulary.get_domain_vocabulary(domain)
-                for word in domain_vocab:
-                    manager.add_word(word, context=domain)
-                logger.info(f"Added {len(domain_vocab)} domain words for '{domain}'")
-            
-            # Add dialect vocabulary if specified
-            if dialect:
-                dialect_words = CommonNorwegianVocabulary.get_dialect_vocabulary(dialect)
-                for word in dialect_words:
-                    manager.add_word(word, context=f"dialect:{dialect}")
-                logger.info(
-                    f"Added {len(dialect_words)} dialect words for '{dialect}'"
-                )
-            
-            return manager
+    # Determine effective language for default vocabulary loading
+    effective_lang = language or ("no" if use_default_norwegian else None)
+    
+    if effective_lang:
+        # Try loading language-specific vocabulary from data/<lang>_vocabulary.json
+        # Also check the legacy filename (norwegian_vocabulary.json) for backward compat
+        vocab_path = Path(__file__).parent.parent / "data" / f"{effective_lang}_vocabulary.json"
+        legacy_path = Path(__file__).parent.parent / "data" / "norwegian_vocabulary.json"
+        
+        if vocab_path.exists():
+            logger.info(f"Loading default vocabulary for '{effective_lang}' ({vocab_path})")
+            manager = VocabularyManager(vocab_path)
+        elif effective_lang == "no" and legacy_path.exists():
+            logger.info(f"Loading default Norwegian vocabulary ({legacy_path})")
+            manager = VocabularyManager(legacy_path)
         else:
-            logger.warning(f"Default Norwegian vocabulary not found at {default_vocab}")
+            logger.debug(f"No vocabulary file found for '{effective_lang}' at {vocab_path}")
+            manager = VocabularyManager()
+        
+        # Also add domain vocabulary if specified
+        if domain:
+            domain_vocab = CommonVocabulary.get_domain_vocabulary(domain)
+            for word in domain_vocab:
+                manager.add_word(word, context=domain)
+            logger.info(f"Added {len(domain_vocab)} domain words for '{domain}'")
+        
+        # Add dialect vocabulary if specified
+        if dialect:
+            dialect_words = CommonVocabulary.get_dialect_vocabulary(dialect)
+            for word in dialect_words:
+                manager.add_word(word, context=f"dialect:{dialect}")
+            logger.info(
+                f"Added {len(dialect_words)} dialect words for '{dialect}'"
+            )
+        
+        return manager
     
     # Fallback to empty or domain-only
     if domain or dialect:
         logger.info(f"Loading predefined vocabulary (domain={domain}, dialect={dialect})")
-        return CommonNorwegianVocabulary.create_manager(domain=domain, dialect=dialect)
+        return CommonVocabulary.create_manager(domain=domain, dialect=dialect)
     else:
         logger.debug("Using empty vocabulary manager")
         return VocabularyManager()

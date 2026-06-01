@@ -414,13 +414,14 @@ def _capitalize_sentence(words: List[str]) -> List[str]:
     return result
 
 
-def normalize_norwegian_text(
+def normalize_text(
     text: str,
     auto_correct: bool = False,
     preserve_dialect: bool = False,
+    language: Optional[str] = None,
 ) -> Tuple[str, List[Dict]]:
     """
-    Normalize Norwegian text and return corrections with explanations.
+    Normalize text and return corrections with explanations.
     
     Applies in order:
     1. Fix stuttering (consecutive duplicate words)
@@ -429,17 +430,153 @@ def normalize_norwegian_text(
     4. Fix missing spaces after punctuation
     5. Flag character substitutions, English words, repetition
     
+    For Norwegian (language="no" or "nn"), applies Norwegian-specific
+    normalization rules including dialect awareness and character mappings.
+    For other languages, applies only language-agnostic normalization
+    (stuttering, punctuation, capitalization).
+    
     Args:
         text: Raw transcription text
         auto_correct: If True, also apply character substitutions and
                       English word replacements (aggressive mode)
         preserve_dialect: If True, dialect words are preserved and not
                           flagged as corrections. Dialect is valid Norwegian.
+        language: Language code for language-specific normalization.
+                  If None or Norwegian ("no", "nn"), uses Norwegian rules.
         
     Returns:
         Tuple of (normalized_text, list_of_corrections)
         Each correction dict has: original, corrected, position, type, explanation
     """
+    # Determine if Norwegian-specific normalization should be applied
+    is_norwegian = language is None or language in ("no", "nn")
+    
+    corrections = []
+    normalized = text.strip()
+    
+    # 0. Pre-clean: normalize whitespace
+    normalized = re.sub(r'\s+', ' ', normalized)
+    
+    # 1. Fix stuttering (consecutive duplicate words)
+    words = normalized.split()
+    words, stutter_corrections = _fix_stuttering(words)
+    corrections.extend(stutter_corrections)
+    
+    # 2. Restore punctuation
+    words, punct_corrections = _restore_punctuation(words)
+    corrections.extend(punct_corrections)
+    
+    # 3. Capitalize sentences
+    words = _capitalize_sentence(words)
+    
+    # Rejoin into text
+    normalized = ' '.join(words)
+    
+    # 4. Fix missing spaces after punctuation
+    # Pattern: punctuation followed immediately by letter (no space)
+    punct_pattern = re.compile(r'([.,;:!?])([a-zA-ZæøåÆØÅ])')
+    offset = 0
+    for match in punct_pattern.finditer(normalized):
+        pos = match.start() + offset
+        normalized = normalized[:pos+1] + ' ' + normalized[pos+1:]
+        offset += 1
+        corrections.append({
+            "original": match.group(0),
+            "corrected": match.group(1) + ' ' + match.group(2),
+            "position": match.start(),
+            "type": "missing_space",
+            "explanation": "Manglende mellomrom etter tegnsetting"
+        })
+    
+    # 5. Fix multiple spaces (again, in case step 4 introduced any)
+    normalized = re.sub(r'  +', ' ', normalized)
+    
+    # Norwegian-specific normalization steps
+    if is_norwegian:
+        # 6. Flag character substitutions (aa→å, ae→æ, oe→ø)
+        for pattern, replacement in NORWEGIAN_CHAR_MAP.items():
+            for match in re.finditer(pattern, normalized, re.IGNORECASE):
+                corrections.append({
+                    "original": match.group(0),
+                    "corrected": replacement,
+                    "position": match.start(),
+                    "type": "char_substitution",
+                    "explanation": f"Mulig '{match.group(0)}' skal være '{replacement}'"
+                })
+        
+        # 7. Flag English words
+        word_list = normalized.lower().split()
+        for i, word in enumerate(word_list):
+            if word in ENGLISH_TO_NORWEGIAN:
+                corrections.append({
+                    "original": word,
+                    "corrected": ENGLISH_TO_NORWEGIAN[word],
+                    "position": i,
+                    "type": "english_word",
+                    "explanation": f"Engelsk ord '{word}' — kanskje ment '{ENGLISH_TO_NORWEGIAN[word]}'?"
+                })
+        
+        # 7b. Flag dialect-standard mismatches (informational only)
+        # Dialect is valid Norwegian — we flag but don't correct
+        # When preserve_dialect=True, skip dialect flagging entirely
+        if not preserve_dialect:
+            dialect_map = _get_dialect_map()
+            for i, word in enumerate(word_list):
+                if word in dialect_map:
+                    standard = dialect_map[word]
+                    if word != standard:
+                        corrections.append({
+                            "original": word,
+                            "corrected": standard,
+                            "position": i,
+                            "type": "dialect_word",
+                            "explanation": f"Dialektord '{word}' — standard '{standard}' (dialekt er OK, flagges kun for informasjon)"
+                        })
+    else:
+        # Non-Norwegian: just get word list for repetition/segment checks
+        word_list = normalized.lower().split()
+    
+    # 8. Flag excessive repetition (across whole segment, not just consecutive)
+    for word in set(word_list):
+        count = word_list.count(word)
+        if count >= 3:
+            corrections.append({
+                "original": word,
+                "corrected": word,
+                "position": -1,
+                "type": "repetition",
+                "explanation": f"Ordet '{word}' gjentas {count} ganger — mulig hallusinasjon"
+            })
+    
+    # 9. Flag very short segments
+    if len(word_list) < 3:
+        corrections.append({
+            "original": normalized,
+            "corrected": normalized,
+            "position": 0,
+            "type": "short_segment",
+            "explanation": f"Kun {len(word_list)} ord — sjekk at segmentet er komplett"
+        })
+    
+    return normalized, corrections
+
+
+def normalize_norwegian_text(
+    text: str,
+    auto_correct: bool = False,
+    preserve_dialect: bool = False,
+) -> Tuple[str, List[Dict]]:
+    """
+    Backward-compatible alias for normalize_text with Norwegian defaults.
+    
+    Deprecated: Use normalize_text(language="no") instead.
+    """
+    return normalize_text(
+        text=text,
+        auto_correct=auto_correct,
+        preserve_dialect=preserve_dialect,
+        language="no",
+    )
     corrections = []
     normalized = text.strip()
     
@@ -548,6 +685,7 @@ def normalize_norwegian_text(
 def normalize_transcription_segments(
     segments: List[Dict],
     preserve_dialect: bool = False,
+    language: Optional[str] = None,
 ) -> Tuple[List[Dict], List[Dict]]:
     """
     Normalize all segments in a transcription and collect all corrections.
@@ -555,6 +693,8 @@ def normalize_transcription_segments(
     Args:
         segments: List of segment dicts with 'text' field
         preserve_dialect: If True, dialect words are preserved and not flagged
+        language: Language code for language-specific normalization.
+                  If None or Norwegian, uses Norwegian rules.
         
     Returns:
         Tuple of (normalized_segments, all_corrections)
@@ -564,7 +704,9 @@ def normalize_transcription_segments(
     
     for seg in segments:
         text = seg.get("text", "")
-        normalized_text, corrections = normalize_norwegian_text(text, preserve_dialect=preserve_dialect)
+        normalized_text, corrections = normalize_text(
+            text, preserve_dialect=preserve_dialect, language=language
+        )
         
         # Create normalized segment
         normalized_seg = dict(seg)
@@ -604,7 +746,7 @@ def export_normalization_report(
         Path to exported report
     """
     lines = [
-        "=== NORWEGIAN TEXT NORMALIZATION REPORT ===",
+        "=== TEXT NORMALIZATION REPORT ===",
         f"Total issues flagged: {len(corrections)}",
         "",
     ]
