@@ -123,8 +123,10 @@ comparison:
   min_agreement_score: 0.95
 
 # Batch Processing Settings
+# CPU-only transcription: 1 worker is optimal (CTranslate2 is CPU-bound).
+# Increase only if you have GPU acceleration for transcription.
 batch:
-  max_workers: 4
+  max_workers: 1
   chunk_size: 10  # Number of files per worker
   timeout_per_file: 3600  # Seconds (1 hour max per file)
 

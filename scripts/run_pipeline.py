@@ -680,10 +680,10 @@ Examples:
     --input audio.m4a --output-dir ./output \\
     --diarize --compare-models
 
-  # Batch processing
+  # Batch processing (CPU-only: use --workers 1 unless you have GPU)
   uv run python scripts/run_pipeline.py \\
     --input recordings/ --output-dir ./output \\
-    --workers 4 --diarize
+    --workers 1 --diarize
 
   # Single step
   uv run python scripts/run_pipeline.py \\
