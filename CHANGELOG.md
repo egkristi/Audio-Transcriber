@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **`src/analyze.py`** — `detect_language()` now returns `(language_code, confidence)` tuple. `AudioMetadata` gains `language_confidence: float = 0.0` field. No more hardcoded 0.5 threshold in detection — raw confidence flows to pipeline for routing.
   - **`src/transcribe.py`** — `_load_model()` reads `language` from config instead of hardcoded `"no"`. `_align_with_whisperx()` uses `get_alignment_model(language)` from model registry for dynamic alignment model selection (Bokmål/Nynorsk wav2vec2).
   - **`scripts/run_pipeline.py`** — CLI simplified: `--language` optional override (default: auto-detect), `--dialect` choices expanded to all 5 dialects (auto-detected from text when omitted), `--no-auto-detect` flag. Pipeline now resolves language after Step 1 (analyze), selects model from registry, auto-detects dialect from transcribed text, and exports per-file detection report (detected language + confidence, resolved language, selected models, detected dialect, fallbacks triggered).
+- **Phase 11 fasit1 test results** — pipeline test on fasit1 (27-min Håvard Kristiansen recording) with auto-detection enabled:
+  - **Language detection**: faster-whisper tiny detected "tr" (Turkish) with 0.18 confidence → correctly fell back to "no" (Norwegian) via `resolve_language()`. Expected behavior — tiny model often misidentifies Norwegian.
+  - **Model routing**: correctly selected `NbAiLab/nb-whisper-large-verbatim` for Norwegian.
+  - **Transcription**: 55 segments, 3,225 hypothesis words vs 2,810 reference words. WER: 53.7% (684 substitutions, 205 deletions, 620 insertions). Comparable to previous runs on this recording.
+  - **Alignment**: `NbAiLab/nb-wav2vec2-1b-bokmaal-v2` not recognized by WhisperX alignment — falls through to no alignment gracefully.
+  - **Dialect auto-detection**: failed with `DialectPack.__init__() missing 1 required positional argument: 'data'` — needs fix in dialect pack instantiation.
+  - **Detection report**: correctly exports per-file JSON with detected/resolved language, model selections, and fallback chain.
 
 ### Changed
 - **Confidence hard-rules now discriminate effectively** — three key fixes:
