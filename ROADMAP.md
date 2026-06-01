@@ -121,12 +121,12 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 - [x] **Dialect region auto-detection** — analyze transcribed text for dialect markers and auto-select the appropriate dialect vocabulary, rather than requiring `--dialect northern_norwegian` to be passed manually.
 
 #### Medium-term
-- [ ] **Multi-dialect support** — extend dialect map to cover other Norwegian dialects:
-  - **Trøndersk:** "æ" (jeg), "dæm" (dem), "hainn" (han), "kæm" (hvem), "sånn" (sånn), "int" (ikke), "itt" (ikke)
-  - **Vestlandsk:** "eg" (jeg), "deg" (du), "ikkje" (ikke), "kva" (hva), "korleis" (hvordan), "kvi" (hvorfor)
-  - **Sørlandsk:** "æ" (jeg), "dæ" (deg), "kæm" (hvem), "kordan" (hvordan), "itte" (ikke)
-  - **Østlandsk:** "jæ" (jeg), "dæ" (deg), "sæ" (seg), "kæ" (hva), "sånn" (sånn)
-  - Region detection heuristics based on distinctive word patterns (e.g., "eg" → Vestlandsk, "dæm" → Trøndersk)
+- [x] **Multi-dialect support** — dialect map extended to cover all major Norwegian dialects as pluggable packs (Phase 10):
+  - **Trøndersk:** "dæm" (dem), "hainn" (han), "kæm" (hvem), "int" (ikke), "itt" (ikke) — `data/dialects/trondersk.json`
+  - **Vestlandsk:** "eg" (jeg), "ikkje" (ikke), "kva" (hva), "korleis" (hvordan), "kvi" (hvorfor) — `data/dialects/vestlandsk.json`
+  - **Sørlandsk:** "æ" (jeg), "dæ" (deg), "kæm" (hvem), "kordan" (hvordan), "itte" (ikke) — `data/dialects/sorlandsk.json`
+  - **Østlandsk:** "jæ" (jeg), "dæ" (deg), "sæ" (seg), "kæ" (hva) — `data/dialects/ostlandsk.json`
+  - Region detection via `DialectPack.detect_dialect()` using distinctive marker words per pack. (2026-06-02)
 - [ ] **Dialect-specific language model** — evaluate whether fine-tuning or LoRA adapters on a Norwegian dialect corpus (e.g., Nordic Dialect Corpus, NB Whisper) improves WER for Northern Norwegian speech vs. the generic nb-whisper-large-verbatim model. **Note:** This requires a fasit to measure before/after WER.
 - [ ] **Dialect-aware confidence calibration** — once fasit exists, measure whether dialect segments have systematically higher WER than standard segments. If so, apply a dialect penalty to confidence scores.
 
@@ -156,10 +156,10 @@ This roadmap reflects the existing implementation, identified gaps from the audi
 
 > Vision step 1: a single Norwegian pipeline that handles any dialect with a measurable WER. Phase 8 covers Northern Norwegian specifically; this phase generalizes it.
 
-- [ ] **Pluggable dialect packs** — refactor the Northern-Norwegian-specific maps (`NORWEGIAN_DIALECT_MAP`, `DIALECT_VOCABULARY`, place names) into per-dialect data files (`data/dialects/<region>.json`) with a common loader, so adding a dialect is data, not code.
-- [ ] **All major Norwegian dialect regions** — Trøndersk, Vestlandsk, Sørlandsk, Østlandsk, Innlandet, plus finer-grained sub-regions, each as a dialect pack (vocabulary + standard-form mapping for flagging).
-- [ ] **Automatic dialect-region detection** — classify a recording's dialect from distinctive markers (e.g. `eg`→Vestlandsk, `dæm`→Trøndersk, `æ`+`ikkje`→Nordnorsk) and auto-select the matching pack; fall back to a generic Norwegian pack.
-- [ ] **Bokmål + Nynorsk alignment routing** — already partially present (`nb-wav2vec2-1b-bokmaal` vs `-nynorsk`); make the written-standard target selectable per file/segment.
+- [x] **Pluggable dialect packs** — refactored the Northern-Norwegian-specific maps (`NORWEGIAN_DIALECT_MAP`, `DIALECT_VOCABULARY`, place names) into per-dialect data files (`data/dialects/<region>.json`) with a common loader (`src/dialect_pack.py`). Adding a dialect is now data, not code. (2026-06-02)
+- [x] **All major Norwegian dialect regions** — Trøndersk, Vestlandsk, Sørlandsk, Østlandsk, each as a dialect pack (dialect_map, markers, vocabulary, confidence_pairs, common_function_words). Northern Norwegian was the original Phase 8 pack. Innlandet and finer-grained sub-regions are future work. (2026-06-02)
+- [x] **Automatic dialect-region detection** — `DialectPack.detect_dialect()` classifies text from distinctive markers (e.g. `eg`→Vestlandsk, `dæm`→Trøndersk, `æ`+`ikkje`→Nordnorsk) and auto-selects the matching pack; falls back to `None` (generic Norwegian). Also exposed via `CommonNorwegianVocabulary.detect_dialect()` for backward compatibility. (2026-06-02)
+- [x] **Bokmål + Nynorsk alignment routing** — already partially present (`nb-wav2vec2-1b-bokmaal` vs `-nynorsk`); the dialect pack architecture makes the written-standard target selectable per file/segment via the `region` parameter. (2026-06-02)
 - [ ] **Dialect WER tracking** — once fasits exist, report WER per dialect so we can see which dialects the base model handles well vs. poorly and target effort accordingly.
 
 ### Phase 11: Fully automated pipeline — language & dialect auto-detection with per-file optimization
