@@ -315,6 +315,8 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 - **#8** — `editor.py` web editor (parked; Subtitle Edit covers the need)
 - **#44** — VAD onset/offset tuning: v9 (onset=0.300, offset=0.400) achieves 47.84% WER (vs 63.67% v6 baseline). Deletions reduced 87% (998→128). v12 (first run with asr_options correctly applied) achieved 86.89% WER — worst result. Root cause: `condition_on_previous_text=True` causes repetition looping. Next: v13 with `condition_on_previous_text=False`, revert to whisperx defaults.
 - **#46** — Confidence priority scores have zero correlation with actual WER
+- **#48** — Phase 11 dialect auto-detection crashes: DialectPack.__init__() missing required 'data' argument
+- **#49** — Phase 11 alignment model name passed as language code to WhisperX
 
 ### #46 — Confidence priority scores have zero correlation with actual WER
 - **File:** `src/confidence.py`
@@ -365,6 +367,28 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
   4. **Signal rebalancing**: The current signal mix is dominated by acoustic confidence (alignment, logprob) which correlates with audio quality, not errors. Need to either (a) weight hard-rules higher than acoustic signals, or (b) remove acoustic signals from the priority computation and rely solely on hard-rules.
 
 - **Discovered during:** Confidence validation analysis (2026-06-01).
+
+### #49 — Phase 11 alignment model name passed as language code to WhisperX
+- **File:** `src/transcribe.py`
+- **Status:** Open
+- **Priority:** Medium
+- **Description:** The model registry's `get_alignment_model("no")` returns `"NbAiLab/nb-wav2vec2-1b-bokmaal-v2"` (the full HuggingFace model name). This full model name is then passed as the `language` parameter to `whisperx.align()`, which expects a language code (e.g., `"no"`) and looks up the default alignment model internally. WhisperX then fails with: `No default alignment model for language: NbAiLab/nb-wav2vec2-1b-bokmaal-v2`.
+- **Impact:** Word-level alignment scores are unavailable. The pipeline falls through gracefully (logs warning, continues without alignment), but confidence scoring loses acoustic alignment signals.
+- **Root cause:** `_align_with_whisperx()` in `transcribe.py` passes the alignment model name from the registry as the `language` argument to `whisperx.align()`. The fix should pass the language code (`"no"`) as the language, and the model name as the `align_model` parameter instead.
+- **Log evidence:** `"No default alignment model for language: NbAiLab/nb-wav2vec2-1b-bokmaal-v2"`
+- **Discovered during:** Phase 11 fasit1 pipeline test (2026-06-01).
+
+### #48 — Phase 11 dialect auto-detection crashes: DialectPack.__init__() missing required 'data' argument
+- **File:** `scripts/run_pipeline.py`
+- **Status:** Open
+- **Priority:** High
+- **Description:** The Phase 11 dialect auto-detection step in `run_pipeline.py` calls `DialectPack()` without passing the required `data` argument. This causes `TypeError: DialectPack.__init__() missing 1 required positional argument: 'data'` when the pipeline attempts to auto-detect dialect from transcribed text.
+- **Impact:** Dialect auto-detection is completely broken in Phase 11. The pipeline logs a warning and continues, but no dialect is detected and no dialect-specific vocabulary/normalization is applied.
+- **Root cause:** `DialectPack.__init__()` requires a `data` parameter (the loaded dialect JSON data), but the pipeline code in `process_single_file()` instantiates `DialectPack()` without any arguments. The pipeline needs to either:
+  1. Load the dialect data first and pass it to `DialectPack()`, or
+  2. Use `DialectPack.for_dialect()` or similar class method that handles loading internally.
+- **Log evidence:** `"Dialect auto-detection failed: DialectPack.__init__() missing 1 required positional argument: 'data'"`
+- **Discovered during:** Phase 11 fasit1 pipeline test (2026-06-01).
 
 ### #47 — AUDIT K5: spell_check.py check_word silently accepts unknown words (include_unknown=True bug)
 - **File:** `src/spell_check.py`
