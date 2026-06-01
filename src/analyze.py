@@ -40,6 +40,7 @@ class AudioMetadata:
     loudness_lufs: float  # Loudness in LUFS
     peak_db: float  # Peak level in dB
     dynamic_range_db: float  # Difference between peak and RMS
+    language_confidence: float = 0.0  # Language detection confidence (0.0-1.0)
     
     # Transcription quality (populated after transcription step)
     total_confidence: float = 1.0  # Aggregate confidence across all segments (0-1)
@@ -170,12 +171,15 @@ def _get_language_model():
     return _language_model
 
 
-def detect_language(file_path: Path) -> str:
+def detect_language(file_path: Path) -> tuple:
     """
     Detect language using faster-whisper's built-in language detection.
     
     Uses the tiny model (cached across calls) and only processes the first
     30 seconds of audio for speed. Falls back to Norwegian ('no') on failure.
+    
+    Returns:
+        Tuple of (language_code, confidence) where confidence is 0.0-1.0.
     """
     try:
         import whisperx
@@ -189,7 +193,7 @@ def detect_language(file_path: Path) -> str:
 
         model = _get_language_model()
         if model is None:
-            return "no"
+            return "no", 0.0
 
         # faster-whisper transcribe returns (segments_generator, info)
         segments, info = model.transcribe(audio, beam_size=1)
@@ -198,14 +202,10 @@ def detect_language(file_path: Path) -> str:
         detected = info.language if info and info.language else "no"
         confidence = info.language_probability if info else 0.0
         logger.info(f"Detected language for {file_path.name}: {detected} (confidence: {confidence:.2f})")
-        # Threshold: low-confidence detection is unreliable with tiny model
-        if confidence < 0.5:
-            logger.warning(f"Language detection confidence too low ({confidence:.2f}), falling back to 'no' (Norwegian)")
-            return "no"
-        return detected
+        return detected, confidence
     except Exception as e:
         logger.warning(f"Language detection failed for {file_path}: {e}, defaulting to 'no'")
-        return "no"
+        return "no", 0.0
 
 
 def detect_speech_vad(audio_data: np.ndarray, sample_rate: int) -> bool:
@@ -328,7 +328,7 @@ def analyze_audio(file_path: Path, config: Optional[dict] = None) -> AudioMetada
     # Run analysis steps
     bandwidth = detect_bandwidth(sr, audio_data_mono)
     stereo_sep = detect_stereo_separation(audio_data_stereo, sr)
-    language = detect_language(file_path)
+    language, language_confidence = detect_language(file_path)
     has_speech = detect_speech_vad(audio_data_mono, sr)
     loudness, peak_db, dyn_range = calculate_loudness_and_dynamics(audio_data_mono, sr)
 
@@ -344,6 +344,7 @@ def analyze_audio(file_path: Path, config: Optional[dict] = None) -> AudioMetada
         bandwidth_type=bandwidth,
         has_stereo_separation=stereo_sep,
         language=language,
+        language_confidence=language_confidence,
         has_speech=has_speech,
         loudness_lufs=loudness,
         peak_db=peak_db,

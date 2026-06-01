@@ -37,10 +37,12 @@ from src.transcribe import transcribe_audio, TranscriptionSegment
 from src.compare import compare_transcriptions
 from src.editor import export_for_manual_editing
 from src.database import TranscriptionDatabase
-from src.vocabulary import load_vocabulary
+from src.vocabulary import load_vocabulary, CommonNorwegianVocabulary
 from src.spell_check import check_transcription
 from src.confidence import extract_confidence_signals
 from src.normalize import normalize_transcription_segments, export_normalization_report
+from src.model_registry import get_model_config, resolve_language, get_available_languages
+from src.dialect_pack import DialectPack, get_available_dialects
 
 logger = get_logger("pipeline")
 
@@ -89,17 +91,19 @@ class AudioTranscriberPipeline:
         steps: Optional[List[str]] = None,
         diarize: bool = False,
         compare_models: bool = False,
-        primary_model: str = "NbAiLab/nb-whisper-large-verbatim",
-        secondary_model: str = "openai/whisper-large-v3",
+        primary_model: Optional[str] = None,
+        secondary_model: Optional[str] = None,
         db: Optional[TranscriptionDatabase] = None,
         vocab_file: Optional[Path] = None,
         dialect: Optional[str] = None,
+        language: Optional[str] = None,
         spell_check: bool = False,
         normalize: bool = True,  # Enable normalization by default (fixes stuttering, punctuation, capitalization)
         preserve_dialect: bool = True,  # Preserve dialect forms by default (dialect is valid Norwegian)
         min_speakers: Optional[int] = None,
         max_speakers: Optional[int] = None,
         hallucination_filter: bool = True,
+        no_auto_detect: bool = False,
     ) -> Dict:
         """
         Process a single audio file through the pipeline.
@@ -110,12 +114,13 @@ class AudioTranscriberPipeline:
             steps: List of steps to run (None = all)
             diarize: Run diarization
             compare_models: Run secondary model comparison
-            primary_model: Primary transcription model
-            secondary_model: Secondary transcription model
+            primary_model: Primary transcription model (None = auto-select from model registry)
+            secondary_model: Secondary transcription model (None = auto-select)
             db: Optional TranscriptionDatabase for job tracking
             vocab_file: Optional custom vocabulary JSON file
             dialect: Dialect region for vocabulary injection
-                     (e.g. "northern_norwegian")
+                     (e.g. "northern_norwegian"). None = auto-detect from text.
+            language: Language code override (e.g. "no", "sv", "en"). None = auto-detect.
             spell_check: Enable Norwegian spell-checking on output
             normalize: Enable Norwegian text normalization (default: True — fixes
                       stuttering, punctuation, capitalization, and spacing)
@@ -125,6 +130,7 @@ class AudioTranscriberPipeline:
             max_speakers: Maximum number of speakers for diarization
             hallucination_filter: Enable post-transcription hallucination filtering
                                   (default: True). Set to False to keep all segments.
+            no_auto_detect: Disable language/dialect auto-detection, use config defaults
             
         Returns:
             Dict with pipeline results
@@ -153,6 +159,7 @@ class AudioTranscriberPipeline:
                         "sample_rate": metadata.sample_rate,
                         "bandwidth": metadata.bandwidth_type,
                         "language": metadata.language,
+                        "language_confidence": metadata.language_confidence,
                         "has_speech": metadata.has_speech
                     }
                 }
@@ -169,6 +176,57 @@ class AudioTranscriberPipeline:
                     logger.error("Metadata not found, running analyze step")
                     metadata = analyze_audio(file_path)
                     save_metadata(metadata, file_output_dir)
+            
+            # Language resolution: auto-detect or use explicit override
+            effective_language = language
+            detection_report = {
+                "detected_language": metadata.language,
+                "detected_confidence": metadata.language_confidence,
+                "forced_language": language,
+                "resolved_language": None,
+                "selected_model": None,
+                "selected_alignment": None,
+                "detected_dialect": None,
+                "fallbacks_triggered": [],
+            }
+            
+            if no_auto_detect:
+                # Use config default language
+                effective_language = effective_language or self.config.get("language", "no")
+                logger.info(f"Auto-detection disabled, using language: {effective_language}")
+            else:
+                # Resolve language from detection + optional override
+                effective_language = resolve_language(
+                    detected_language=metadata.language,
+                    confidence=metadata.language_confidence,
+                    force_language=language,
+                )
+                logger.info(
+                    f"Language detection: {metadata.language} "
+                    f"(confidence={metadata.language_confidence:.3f}) → "
+                    f"resolved: {effective_language}"
+                )
+            
+            detection_report["resolved_language"] = effective_language
+            
+            # Select model from registry
+            model_config = get_model_config(effective_language)
+            if model_config:
+                if primary_model is None:
+                    primary_model = model_config["transcription"]
+                    detection_report["selected_model"] = primary_model
+                    logger.info(f"Model registry selected: {primary_model} for {effective_language}")
+                if secondary_model is None and compare_models:
+                    secondary_model = model_config.get("fallback", "openai/whisper-large-v3")
+                    logger.info(f"Fallback model: {secondary_model} for {effective_language}")
+                detection_report["selected_alignment"] = model_config.get("alignment")
+            else:
+                if primary_model is None:
+                    primary_model = "NbAiLab/nb-whisper-large-verbatim"
+                    detection_report["fallbacks_triggered"].append(
+                        f"No registry entry for {effective_language}, using default model"
+                    )
+                    logger.warning(f"No model registry entry for {effective_language}, using default")
             
             # Step 2: Preprocess
             if not steps or "preprocess" in steps:
@@ -215,7 +273,11 @@ class AudioTranscriberPipeline:
             # Step 3/4: Transcription (Primary Model)
             if not steps or "transcribe" in steps:
                 logger.info("\nSTEP 3/4: Transcription (Primary Model)")
-                transcription_config = self.config.data
+                transcription_config = dict(self.config.data)
+                
+                # Set language from auto-detection or override
+                transcription_config["language"] = effective_language
+                logger.info(f"Transcription language set to: {effective_language}")
                 
                 # Build initial prompt from vocabulary
                 # Default: load built-in Norwegian vocabulary (places, names, institutions)
@@ -312,6 +374,34 @@ class AudioTranscriberPipeline:
                         f"Transcription confidence: {metadata.total_confidence:.3f} "
                         f"({metadata.flagged_segments_count}/{metadata.segments_count} segments flagged)"
                     )
+                
+                # Dialect auto-detection from transcribed text
+                # Only relevant for Norwegian languages
+                if not no_auto_detect and effective_language in ("no", "nn") and primary_segments:
+                    logger.info("\nSTEP: Dialect Auto-Detection")
+                    try:
+                        full_text = " ".join(s.text for s in primary_segments if s.text)
+                        if full_text.strip():
+                            dialect_pack = DialectPack()
+                            detected_dialect = dialect_pack.detect_dialect_from_segments(
+                                [{"text": s.text} for s in primary_segments if s.text]
+                            )
+                            if detected_dialect:
+                                detection_report["detected_dialect"] = detected_dialect
+                                logger.info(f"Auto-detected dialect: {detected_dialect}")
+                                # If no explicit dialect was provided, use the auto-detected one
+                                if dialect is None:
+                                    dialect = detected_dialect
+                                    logger.info(f"Using auto-detected dialect: {dialect}")
+                            else:
+                                logger.info("No dialect detected (standard Norwegian)")
+                        else:
+                            logger.info("No text available for dialect detection")
+                    except Exception as dialect_err:
+                        logger.warning(f"Dialect auto-detection failed: {dialect_err}")
+                        detection_report["fallbacks_triggered"].append(
+                            f"Dialect detection error: {dialect_err}"
+                        )
                 
                 # Step: Norwegian text normalization (opt-in, #35)
                 if normalize:
@@ -508,6 +598,13 @@ class AudioTranscriberPipeline:
                         "instructions": instructions[:200]  # Truncate for summary
                     }
             
+            # Export detection report
+            detection_report_path = file_output_dir / f"{file_path.stem}_detection_report.json"
+            with open(detection_report_path, "w") as f:
+                json.dump(detection_report, f, indent=2, default=str)
+            results["detection_report"] = detection_report
+            logger.info(f"Detection report saved: {detection_report_path}")
+            
             results["status"] = "complete"
             logger.info("\n✓ Pipeline completed successfully")
             
@@ -654,13 +751,13 @@ Examples:
     )
     parser.add_argument(
         "--primary-model",
-        default="NbAiLab/nb-whisper-large-verbatim",
-        help="Primary transcription model"
+        default=None,
+        help="Primary transcription model (default: auto-select from model registry based on language)"
     )
     parser.add_argument(
         "--secondary-model",
-        default="openai/whisper-large-v3",
-        help="Secondary transcription model"
+        default=None,
+        help="Secondary transcription model for comparison (default: auto-select from model registry)"
     )
     
     # Batch processing
@@ -685,13 +782,27 @@ Examples:
         help="Path to JSON vocabulary file for initial_prompt injection"
     )
     parser.add_argument(
+        "--language",
+        type=str,
+        default=None,
+        help="Language code override (e.g. 'no', 'sv', 'da', 'en'). "
+             "Default: auto-detect from audio content."
+    )
+    parser.add_argument(
+        "--no-auto-detect",
+        action="store_true",
+        default=False,
+        help="Disable language and dialect auto-detection. Uses config defaults."
+    )
+    parser.add_argument(
         "--dialect",
         type=str,
         default=None,
-        choices=["northern_norwegian"],
+        choices=get_available_dialects(),
         help="Dialect region for vocabulary injection. Injects dialect words "
              "into Whisper's initial_prompt to improve recognition of "
-             "non-standard forms. Currently supports: northern_norwegian"
+             "non-standard forms. When omitted, dialect is auto-detected "
+             "from transcribed text (Norwegian only)."
     )
     parser.add_argument(
         "--spell-check",
@@ -793,12 +904,14 @@ Examples:
             "db": db,
             "vocab_file": args.vocabulary_file,
             "dialect": args.dialect,
+            "language": args.language,
             "spell_check": args.spell_check,
             "normalize": args.normalize,
             "preserve_dialect": args.preserve_dialect,
             "min_speakers": min_speakers,
             "max_speakers": max_speakers,
             "hallucination_filter": args.hallucination_filter,
+            "no_auto_detect": args.no_auto_detect,
         }
         
         if args.input.is_file():

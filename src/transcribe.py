@@ -13,6 +13,7 @@ import json
 import numpy as np
 
 from .utils import get_logger, save_json
+from .model_registry import get_model_config, get_alignment_model
 
 logger = get_logger("transcribe")
 
@@ -197,10 +198,13 @@ class Transcriber:
             if "suppress_tokens" in tc:
                 asr_options["suppress_tokens"] = tc["suppress_tokens"]
             
+            # Use language from config (set by pipeline based on detection or CLI override).
+            # Default to Norwegian if not specified.
+            language = tc.get("language", "no")
             load_kwargs = {
                 "device": device,
                 "compute_type": compute_type,
-                "language": "no",  # Norwegian
+                "language": language,
             }
             if asr_options:
                 load_kwargs["asr_options"] = asr_options
@@ -260,19 +264,22 @@ class Transcriber:
         else:
             device = "cpu"
         
-        # Map language codes for alignment model lookup
-        # "no" (Norwegian Bokmål) and "nn" (Nynorsk) both have dedicated models
-        align_language = language
-        if language == "no":
-            align_language = "no"  # NbAiLab/nb-wav2vec2-1b-bokmaal-v2
-        elif language == "nn":
-            align_language = "nn"  # NbAiLab/nb-wav2vec2-1b-nynorsk
+        # Use model registry to find the best alignment model for this language.
+        # For Norwegian Bokmål ("no"), uses NbAiLab/nb-wav2vec2-1b-bokmaal-v2.
+        # For Norwegian Nynorsk ("nn"), uses NbAiLab/nb-wav2vec2-1b-nynorsk.
+        # Falls back to whisperx's built-in alignment if no registry entry.
+        align_model_name = get_alignment_model(language)
+        if align_model_name is None:
+            # Fall back to whisperx's built-in alignment model lookup
+            align_language = language
+        else:
+            align_language = align_model_name
         
         # Cache alignment model at module level (#33)
         global _align_model_cache
         align_cache_key = f"{align_language}_{device}"
         if align_cache_key not in _align_model_cache:
-            logger.info(f"Loading alignment model for language: {align_language}")
+            logger.info(f"Loading alignment model for language: {language} ({align_language})")
             _align_model_cache[align_cache_key] = whisperx.load_align_model(
                 language_code=align_language,
                 device=device,
