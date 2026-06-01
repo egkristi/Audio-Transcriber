@@ -12,7 +12,7 @@ Coordinates all 6 pipeline stages:
 
 Usage:
   uv run python scripts/run_pipeline.py --input audio.m4a --output-dir ./output
-  uv run python scripts/run_pipeline.py --input folder/ --workers 4 --diarize --compare-models
+  uv run python scripts/run_pipeline.py --input folder/ --workers 1 --diarize --compare-models
 """
 
 import argparse

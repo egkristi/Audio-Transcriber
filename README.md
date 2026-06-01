@@ -63,7 +63,7 @@ Se `ISSUES.md` for fullstendig og oppdatert liste over åpne og løste problemer
 
 - **#8:** `editor.py` er fortsatt kun en SRT-eksportfunksjon, ikke en ekte web-editor — korrekt parkert, Subtitle Edit dekker behovet.
 - **#5 (løst):** Stereo kanal-splitting er implementert (`split_stereo_channels()`). Verifisert: ingen stereofiler i arbeidsmengden (alle mono). Funksjonen er klar hvis stereofiler dukker opp senere.
-- **#21 (delvis):** Norsk stavekontroll krever ekstern ordbok (NST/UiB) — feature er deaktivert inntil ordbok er på plass. `--spell-check` flagget eksisterer men er en no-op uten ordbok.
+- **#21 (løst):** Norsk stavekontroll fungerer med LibreOffice nb_NO.dic (334K ord, lastes ned automatisk). `--spell-check` flagget er aktivt. Se ISSUES.md #47 for detaljer om lookup-bug som ble fikset.
 - Ingen CI-pipeline (GitHub Actions) — over-scope for personlig verktøy.
 
 ## Rask installasjon
