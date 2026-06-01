@@ -174,19 +174,27 @@ class NorwegianSpellChecker:
         # Check with SymSpell if available
         if self.symspell_available and self.symspell:
             try:
+                # Use include_unknown=False so unknown words return empty list
+                # rather than the word itself with distance > max_edits.
                 suggestions = self.symspell.lookup(
                     word,
                     verbosity=1,  # Top suggestion only
                     max_edit_distance=self.max_edits,
-                    include_unknown=True
+                    include_unknown=False
                 )
                 
                 if suggestions:
-                    # If first suggestion is the word itself, it's correct
-                    if suggestions[0].term == word:
+                    top = suggestions[0]
+                    if top.distance == 0 and top.term == word:
+                        # Exact match in dictionary — word is correct
                         return True, None
                     else:
-                        return False, suggestions[0].term
+                        # Suggestion with distance > 0 — word is misspelled
+                        return False, top.term
+                else:
+                    # No suggestions at all — word is unknown (not in dictionary
+                    # and no close match within edit distance)
+                    return False, None
                 
             except Exception as e:
                 logger.debug(f"SymSpell lookup failed for '{word}': {e}")
@@ -211,7 +219,7 @@ class NorwegianSpellChecker:
         for word in words:
             is_correct, suggestion = self.check_word(word)
             
-            if not is_correct and suggestion:
+            if not is_correct:
                 # Find position in original text
                 pos = text.lower().find(word)
                 if pos >= 0:
@@ -219,7 +227,7 @@ class NorwegianSpellChecker:
                         "word": word,
                         "position": pos,
                         "suggestion": suggestion,
-                        "confidence": 0.8  # Placeholder
+                        "confidence": 0.8 if suggestion else 0.0  # Lower confidence for unknown words
                     })
         
         return errors

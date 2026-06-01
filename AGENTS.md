@@ -56,7 +56,7 @@ analyze → preprocess → diarize → transcribe → compare (optional) → edi
 Supporting modules:
 - `confidence.py` — **wired in**; auto-runs after transcription; exports `*_review_list.txt` with top 20 flagged segments. Validation against fasit still pending.
 - `database.py` — opt-in via `--use-database`
-- `spell_check.py` — opt-in via `--spell-check` **but currently a silent no-op** (no dictionary loaded — see open finding K5 in §6)
+- `spell_check.py` — opt-in via `--spell-check` (Norwegian dictionary loaded from LibreOffice nb_NO.dic, 334K words — see ISSUES.md #47)
 - `vocabulary.py` — opt-in via `--vocabulary-file`; generates Whisper `initial_prompt`
 - `config.py`, `utils.py` — config loading, logging, file helpers
 
@@ -140,13 +140,13 @@ At session start, pick the next task using this order. Stop at the first item th
 1. **Tier 1 — fasit + first WER measurement on a real recording.** Blocks all other work. Without it, every change below is unverifiable.
 2. **Confidence validation** — once fasit exists, compute Spearman / precision@k between `confidence.py` priority score and per-segment WER. If correlation is weak, fix the signal mix before trusting the review list.
 3. **Confidence hard-rules** — always-flag segments containing digit tokens or capitalized OOV tokens, regardless of score.
-4. **K5 (spell_check) decision** — either load a real Norwegian dictionary, or remove `--spell-check` from the CLI. Current state is silent false trust. Add to `ISSUES.md` first.
+4. **K5 (spell_check) resolved** — Norwegian dictionary (334K words from LibreOffice nb_NO.dic) was already being downloaded and loaded. The bug was in the lookup logic (`include_unknown=True` causing unknown words to be silently accepted). Fixed in ISSUES.md #47. `--spell-check` now works correctly.
 5. **Knob tuning against fasit** — each experiment must produce before/after WER in `CHANGELOG.md`:
    - main vs verbatim model
    - `condition_on_previous_text` on/off
    - vocabulary on/off
    - second comparison model on/off
-   - `--spell-check` on/off (only meaningful after K5 is resolved)
+   - `--spell-check` on/off (K5 resolved — spell checker now works correctly)
 6. **Documentation reconciliation pass** — fix the drift listed in §7.
 7. **#4** — remove `segmentation_model` from `config.yaml` and document that pyannote 3.1 bundles its own.
 8. **AUDIT findings not yet tracked** (H2, H4, M1, M2, M4, plus follow-up on K1's weak heuristic) — add to `ISSUES.md` first, then schedule.
@@ -218,7 +218,7 @@ Without this loop, all optimization is guesswork. This is the single highest-lev
 
 ## 15. What NOT to Do
 
-- Do not enable `--spell-check` by default — it currently does nothing (AUDIT K5).
+- Do not enable `--spell-check` by default — it adds latency and may produce false positives on dialect words. Use explicitly when reviewing output.
 - Do not build a web editor (#8) — Subtitle Edit covers the need.
 - Do not add DTW or other fancy alignment in `compare.py` (#9) — `jiwer` is sufficient.
 - Do not add REST API, Docker, multi-language support, or fine-tuning.

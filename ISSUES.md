@@ -307,6 +307,7 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
 - #1, #2, #3, #4, #5, #6, #7, #9, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29, #30, #31, #32, #33, #34, #35, #36, #37, #39, #40, #41, #42, #43
 - #45 — Config nesting bug: ALL asr_options silently ignored since project inception
 - #46 — Confidence priority scores have zero correlation with actual WER (fixes applied in v0.1.37)
+- #47 — AUDIT K5: spell_check.py check_word silently accepts unknown words (include_unknown=True bug)
 - See individual issue entries above for details.
 
 ## Open
@@ -364,6 +365,22 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
   4. **Signal rebalancing**: The current signal mix is dominated by acoustic confidence (alignment, logprob) which correlates with audio quality, not errors. Need to either (a) weight hard-rules higher than acoustic signals, or (b) remove acoustic signals from the priority computation and rely solely on hard-rules.
 
 - **Discovered during:** Confidence validation analysis (2026-06-01).
+
+### #47 — AUDIT K5: spell_check.py check_word silently accepts unknown words (include_unknown=True bug)
+- **File:** `src/spell_check.py`
+- **Status:** Resolved (2026-06-02)
+- **Priority:** Medium
+- **Description:** `NorwegianSpellChecker.check_word()` used `include_unknown=True` in the SymSpell lookup. When a word was not in the dictionary and had no close match within edit distance, SymSpell returned the word itself with distance > max_edits. The code checked `suggestions[0].term == word` which was True, so it returned `(True, None)` — silently accepting unknown words as correct.
+- **Impact:** `--spell-check` gave users false confidence. Unknown words (misspellings, hallucinations) were never flagged. The dictionary was correctly downloaded and loaded (334,169 words from LibreOffice nb_NO.dic), but the lookup logic defeated its purpose.
+- **Root cause:** Two bugs:
+  1. `include_unknown=True` in `symspell.lookup()` — SymSpell returns the input word itself when no match is found, making it indistinguishable from a correct word.
+  2. `check_text()` only added errors when `not is_correct and suggestion` — unknown words with `suggestion=None` were silently dropped.
+- **Fix:**
+  1. Changed `include_unknown=True` to `include_unknown=False`. Now unknown words return an empty list, which is correctly handled as "not correct, no suggestion."
+  2. Changed `check_text()` condition from `not is_correct and suggestion` to `not is_correct` — unknown words (suggestion=None) are now flagged as errors with confidence=0.0.
+- **Verification:** All 17 spell_check tests pass. Correct words (hest, blomster, solskinn) return True. Misspelled words (hestn→festn, blomsterr→blomster, solskin→solskinn) return False with suggestions. Unknown words (qwerty, zzzzz) return False with None suggestion.
+- **Reference:** AUDIT.md K5 finding.
+- **Discovered during:** Code audit (AUDIT.md K5). Fix applied 2026-06-02.
 
 ### #45 — Config nesting bug: ALL asr_options silently ignored since project inception
 - **File:** `src/transcribe.py`, `config.yaml`

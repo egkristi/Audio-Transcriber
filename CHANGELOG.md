@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Confidence test `test_repeated_words_flagged`** — updated to use non-filler word ("kake") after filler word exclusion was added. Assertion updated to use `startswith("repeated_words")` to match new flag format with word suffix.
+- **Spell checker now actually detects misspellings** — `NorwegianSpellChecker.check_word()` used `include_unknown=True` in SymSpell lookup, causing unknown words to be silently accepted as correct. Changed to `include_unknown=False` so unknown words return empty list and are correctly flagged. Also fixed `check_text()` to flag unknown words even when no suggestion is available (confidence=0.0). The Norwegian dictionary (334,169 words from LibreOffice nb_NO.dic) was already being downloaded and loaded — the bug was in the lookup logic, not the dictionary loading. (ISSUES.md #47, AUDIT.md K5)
 
 ## [0.1.38] - 2026-06-01
 

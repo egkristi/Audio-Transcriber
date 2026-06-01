@@ -52,11 +52,14 @@ Prosjektet er nå **verifisert på ekte data**. Pipeline kjører end-to-end på 
 - **Prioritet:** 🟢 **LØST**
 
 ### K5: `spell_check.py` har ingen faktisk norsk ordbok
-- **Status:** Uavklart — ikke sporet i ISSUES.md
+- **Status:** 🟢 **LØST** (2026-06-02, ISSUES.md #47)
 - **Bevis:** `NorwegianSpellChecker._init_symspell()` oppretter `SymSpell`-objektet, men laster **ingen** ordbok. `check_word()` vil alltid returnere `True, None` fordi det ikke finnes noe å sammenligne mot.
 - **Impact:** `--spell-check` flagget gjør ingenting. Bruker får falsk trygghet.
-- **Fix:** Enten (a) last en norsk ordbok (f.eks. fra NST/UiB), eller (b) fjern `--spell-check` fra CLI inntil ordbok er på plass, eller (c) bruk `transformers`-basert modell som faktisk fungerer.
-- **Prioritet:** 🟠 **MEDIUM**
+- **Fix:** To bugs ble fikset:
+  1. `include_unknown=True` i SymSpell lookup — ukjente ord ble returnert som seg selv og akseptert som korrekte. Endret til `include_unknown=False`.
+  2. `check_text()` krevde `suggestion is not None` for å flagge en feil — ukjente ord uten forslag ble ignorert. Endret til å flagge alle ukorrekte ord uavhengig av forslag.
+  Ordboken (334,169 ord fra LibreOffice nb_NO.dic) ble allerede lastet ned og lastet inn — feilen var i oppslagslogikken, ikke i ordboksinnlasting.
+- **Prioritet:** 🟢 **LØST**
 
 ---
 
