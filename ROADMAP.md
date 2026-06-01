@@ -198,17 +198,22 @@ The pipeline should:
   - Fallback models for low-resource languages
   - Configurable via `config.yaml` under a new `models:` section
 
-- [ ] **Per-dialect VAD parameter tuning** — different dialects may benefit from different VAD settings:
-  - Northern Norwegian (fast, staccato speech): lower onset, higher offset (current v9: 0.300/0.400)
-  - Trøndersk (drawn-out vowels): potentially different onset/offset
-  - Vestlandsk (sing-song intonation): potentially different onset/offset
-  - Store per-dialect VAD presets in dialect pack data files
-  - Auto-select VAD preset based on detected dialect
+- [x] **Per-dialect VAD parameter tuning** — different dialects may benefit from different VAD settings:
+  - Northern Norwegian (fast, staccato speech): lower onset (0.300), higher offset (0.400)
+  - Trøndersk (drawn-out vowels): moderate onset (0.350), higher offset (0.450)
+  - Vestlandsk (sing-song intonation): moderate onset (0.350), higher offset (0.450)
+  - Sørlandsk (relaxed speech): moderate onset (0.350), higher offset (0.450)
+  - Østlandsk (standard): higher onset (0.400), higher offset (0.500) — closest to Bokmål training data
+  - Per-dialect VAD presets stored in dialect pack data files as `vad_presets` section
+  - Pipeline auto-selects VAD preset when dialect is known (explicit `--dialect` or batch-detected)
+  - `DialectPack.apply_vad_presets(config)` merges presets into transcription config
 
-- [ ] **Per-dialect decoding parameter profiles** — different dialects may need different decoding strategies:
-  - Northern Norwegian: current v9 config (beam_size=10, temperature=0.2, repetition_penalty=1.2)
-  - Other dialects: tuned experimentally against fasits
-  - Store as part of dialect pack data
+- [x] **Per-dialect decoding parameter profiles** — different dialects may need different decoding strategies:
+  - All dialects default to whisperx defaults (temperature fallback, beam_size=5) — best known config
+  - Per-dialect decoding presets stored in dialect pack data files as `decoding_presets` section
+  - Pipeline auto-selects decoding preset when dialect is known
+  - `DialectPack.apply_decoding_presets(config)` merges presets into transcription config
+  - Future: tune per-dialect decoding against fasits when available
 
 - [x] **Per-file normalization routing** — route to the correct normalization rules based on detected language + dialect:
   - Norwegian dialects → `normalize.py` with the matching dialect map
@@ -222,11 +227,13 @@ The pipeline should:
   - Model unavailable for detected language: log warning, fall back to `openai/whisper-large-v3` (multilingual)
   - Alignment model unavailable: skip alignment, log warning, proceed without word-level scores
 
-- [ ] **Batch-mode optimization** — when processing a folder:
-  - Run language detection on all files first (fast, tiny model)
+- [x] **Batch-mode optimization** — when processing a folder:
+  - Run language detection on all files first (fast, tiny model, parallel)
   - Group files by detected language/dialect
   - Load models once per group (avoids reloading for each file)
   - Process each group with the optimal config
+  - Model caches cleared between language groups
+  - Skips grouping when `--language` is forced or `--no-auto-detect` is set
 
 - [x] **CLI simplification** — made `--language` and `--dialect` optional overrides rather than required flags:
   - Default: auto-detect everything
@@ -250,7 +257,10 @@ The pipeline should:
 #### Success criteria
 - [x] Pipeline processes a mixed-language batch (e.g., Norwegian + English files) without any manual flags
 - [x] Pipeline correctly detects and routes Northern Norwegian vs. Trøndersk vs. Vestlandsk
-- [ ] Per-dialect VAD parameters measurably improve WER over one-size-fits-all config
+- [x] Per-dialect VAD parameters stored in dialect packs and applied when dialect is known
+- [x] Per-dialect decoding parameters stored in dialect packs and applied when dialect is known
+- [x] Batch-mode optimization groups files by language and reuses model caches within groups
+- [ ] Per-dialect VAD parameters measurably improve WER over one-size-fits-all config (requires fasit evaluation)
 - [x] Detection report accurately reflects what was detected and what was chosen
 - [x] Fallback chain never crashes — always produces a transcript even with uncertain detection
 

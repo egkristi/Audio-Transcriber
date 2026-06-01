@@ -279,6 +279,33 @@ class AudioTranscriberPipeline:
                 transcription_config["language"] = effective_language
                 logger.info(f"Transcription language set to: {effective_language}")
                 
+                # Apply per-dialect VAD and decoding presets if dialect is known
+                # (either explicitly provided or auto-detected from a previous file in batch)
+                if dialect and effective_language in ("no", "nn"):
+                    try:
+                        dialect_pack = DialectPack.load(dialect)
+                        if dialect_pack.vad_presets:
+                            dialect_pack.apply_vad_presets(transcription_config)
+                            logger.info(
+                                f"Applied VAD presets for dialect '{dialect}': "
+                                f"onset={dialect_pack.vad_presets.get('vad_onset')}, "
+                                f"offset={dialect_pack.vad_presets.get('vad_offset')}"
+                            )
+                            detection_report["applied_vad_presets"] = dialect_pack.vad_presets
+                        if dialect_pack.decoding_presets:
+                            dialect_pack.apply_decoding_presets(transcription_config)
+                            logger.info(
+                                f"Applied decoding presets for dialect '{dialect}': "
+                                f"beam_size={dialect_pack.decoding_presets.get('beam_size')}, "
+                                f"temperatures={dialect_pack.decoding_presets.get('temperatures')}"
+                            )
+                            detection_report["applied_decoding_presets"] = dialect_pack.decoding_presets
+                    except (FileNotFoundError, ValueError, RuntimeError) as dp_err:
+                        logger.warning(f"Could not load dialect pack '{dialect}': {dp_err}")
+                        detection_report["fallbacks_triggered"].append(
+                            f"Dialect pack load failed: {dp_err}"
+                        )
+                
                 # Build initial prompt from vocabulary
                 # Default: load built-in Norwegian vocabulary (places, names, institutions)
                 # Override with --vocabulary-file if provided
@@ -619,6 +646,30 @@ class AudioTranscriberPipeline:
         
         return results
     
+    def _detect_language_fast(
+        self, file_path: Path
+    ) -> Dict:
+        """
+        Run fast language detection on a single file using analyze step only.
+
+        Returns a dict with detected_language, confidence, and file path.
+        Used by batch-mode optimization to group files before processing.
+        """
+        try:
+            metadata = analyze_audio(file_path)
+            return {
+                "file_path": file_path,
+                "detected_language": metadata.language,
+                "confidence": metadata.language_confidence,
+            }
+        except Exception as e:
+            logger.warning(f"Fast language detection failed for {file_path.name}: {e}")
+            return {
+                "file_path": file_path,
+                "detected_language": None,
+                "confidence": 0.0,
+            }
+
     def process_batch(
         self,
         input_path: Path,
@@ -627,43 +678,106 @@ class AudioTranscriberPipeline:
         **kwargs
     ) -> List[Dict]:
         """
-        Process multiple audio files in parallel.
-        
+        Process multiple audio files with batch-mode optimization.
+
+        Batch-mode optimization:
+        1. Runs fast language detection on all files first (parallel)
+        2. Groups files by detected language/dialect
+        3. Processes each group sequentially (reuses model caches within group)
+        4. Applies per-dialect VAD/decoding presets for each group
+
         Args:
             input_path: Input directory or file
             output_dir: Output directory
-            workers: Number of parallel workers
+            workers: Number of parallel workers for language detection
             **kwargs: Additional args to pass to process_single_file
-            
+
         Returns:
             List of results for each file
         """
         files = self._find_audio_files(input_path)
-        
+
         if not files:
             logger.warning("No audio files found")
             return []
-        
+
+        # Step 1: Run fast language detection on all files in parallel
+        no_auto_detect = kwargs.get("no_auto_detect", False)
+        force_language = kwargs.get("language")
+
+        if no_auto_detect or force_language:
+            # Skip detection grouping if auto-detect is disabled or language is forced
+            logger.info(
+                "Batch-mode: language detection grouping skipped "
+                + ("(auto-detect disabled)" if no_auto_detect else "(language forced)")
+            )
+            file_groups = {"default": files}
+        else:
+            logger.info(
+                f"Batch-mode: running fast language detection on {len(files)} files..."
+            )
+            detection_results = []
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                futures = {
+                    executor.submit(self._detect_language_fast, f): f
+                    for f in files
+                }
+                for future in as_completed(futures):
+                    try:
+                        detection_results.append(future.result())
+                    except Exception as e:
+                        logger.warning(f"Language detection task failed: {e}")
+
+            # Group files by resolved language
+            file_groups: Dict[str, List[Path]] = {}
+            for det in detection_results:
+                lang = resolve_language(
+                    detected_language=det["detected_language"],
+                    confidence=det["confidence"],
+                    force_language=None,
+                )
+                if lang not in file_groups:
+                    file_groups[lang] = []
+                file_groups[lang].append(det["file_path"])
+
+            logger.info(
+                f"Batch-mode: grouped into {len(file_groups)} language group(s): "
+                + ", ".join(f"{lang}={len(files)}" for lang, files in file_groups.items())
+            )
+
+        # Step 2: Process each group sequentially (model caches reused within group)
         results = []
-        
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = {
-                executor.submit(
-                    self.process_single_file,
-                    file_path,
-                    output_dir,
-                    **kwargs
-                ): file_path
-                for file_path in files
-            }
-            
-            for future in as_completed(futures):
+        for group_lang, group_files in file_groups.items():
+            logger.info(
+                f"\n{'='*60}\n"
+                f"Processing language group: {group_lang} "
+                f"({len(group_files)} files)\n"
+                f"{'='*60}"
+            )
+
+            # Clear model caches between language groups
+            if group_lang != "default":
+                from src.transcribe import _model_cache, _align_model_cache
+                _model_cache.clear()
+                _align_model_cache.clear()
+                logger.debug(f"Cleared model caches for language group switch: {group_lang}")
+
+            for file_path in group_files:
                 try:
-                    result = future.result()
+                    result = self.process_single_file(
+                        file_path,
+                        output_dir,
+                        **kwargs
+                    )
                     results.append(result)
                 except Exception as e:
-                    logger.error(f"Task failed: {e}")
-        
+                    logger.error(f"Batch processing failed for {file_path.name}: {e}")
+                    results.append({
+                        "file": file_path.name,
+                        "status": "failed",
+                        "error": str(e),
+                    })
+
         return results
 
 
