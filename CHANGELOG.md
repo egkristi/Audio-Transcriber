@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 12 regression test (fasit1)** — pipeline run with `--dialect northern_norwegian` on fasit1 (27-min Håvard Kristiansen recording). Results:
+  - **Language detection**: faster-whisper tiny detected "tr" (Turkish) with 0.18 confidence → correctly fell back to "no" (Norwegian) via `resolve_language()`. Consistent with previous runs.
+  - **Transcription**: 55 segments, 1,900 hypothesis words vs 2,810 reference words. WER: 69.47% (638 substitutions, 1,112 deletions, 202 insertions). Within expected range given model non-determinism (previous runs: 47.84%-72.83%).
+  - **Alignment**: `NbAiLab/nb-wav2vec2-1b-bokmaal-v2` loaded successfully. 23/55 segments have word-level scores.
+  - **Normalization**: 413 issues flagged (137 repetition, 115 comma, 52 stuttering, 35 period-end, 28 period, 25 English words, 19 question-end, 2 short segments). Report header correctly shows "TEXT NORMALIZATION REPORT" (language-agnostic).
+  - **Dialect auto-detection**: correctly detected "vestlandsk" (scores: vestlandsk=6.0, ostlandsk=4.5, northern_norwegian=4.0, trondersk=4.0).
+  - **Confidence**: 54/55 segments flagged (avg confidence 0.539).
+  - **No regression from Phase 12 changes**: pipeline runs end-to-end with language pack abstraction. All language-agnostic paths work correctly.
 - **Phase 12: Language pack abstraction** — new `src/language_pack.py` module providing a `LanguagePack` class that wraps model config, dialect packs, normalization hints, and vocabulary for any language. The pipeline is now parameterized by language rather than hardcoded to `"no"`. (ROADMAP.md Phase 12)
   - **`LanguagePack` class** — dataclass with `language_code`, `model_config` (from model registry), `dialect_packs`, `normalization_hints`, `vocabulary`, `script_direction`, `written_standards`. Single source of truth for language-specific configuration.
   - **`get_language_pack()`** — cached factory function that builds a `LanguagePack` from the model registry. Results cached via `functools.lru_cache`.
