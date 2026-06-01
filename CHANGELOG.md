@@ -22,6 +22,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Confidence test `test_repeated_words_flagged`** — updated to use non-filler word ("kake") after filler word exclusion was added. Assertion updated to use `startswith("repeated_words")` to match new flag format with word suffix.
 
+## [0.1.38] - 2026-06-01
+
+### Fixed
+- **Cross-segment repetition no longer flags "jeg"** — added ~80 common Norwegian function words (pronouns, auxiliary verbs, high-frequency adverbs) to the cross-segment repetition exclusion set. Previously, "jeg" (appearing 115× across segments) triggered `cross_segment_repeat` on 94/55 segments (171%). After fix: 39/55 (71%). (ISSUES.md #46)
+- **`repeated_words` no longer shows empty strings from punctuation** — added punctuation stripping before word repetition checking. Previously, "ja." (with period) was not recognized as the filler word "ja" and triggered false flags. After fix: `repeated_words` dropped from 47/55 (85%) to 18/55 (33%). (ISSUES.md #46)
+- **`compute_priority()` no longer crashes on empty segments** — moved `filler_words` and `cross_segment_filler` sets to top of function to fix `NameError` when segments list is empty. (ISSUES.md #46)
+
+### Changed
+- **Confidence re-validation after v0.1.38 fixes** — Spearman ρ = -0.2770 (p = 0.0406) vs old ρ = 0.1850 (p = 0.1763). Still negative (higher priority → lower WER), now statistically significant. Priority histogram improved from 84% "medium" blob to well-distributed 6/12/11/13/13 across 5 levels. Flag distribution healthier: no single flag fires on >78% of segments (vs 98% before). (ISSUES.md #46)
+
 ## [0.1.36] - 2026-06-01
 
 ### Added

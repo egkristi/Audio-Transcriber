@@ -231,6 +231,40 @@ class ConfidenceExtractor:
         Returns:
             Same segments with priority_score and priority_rank set.
         """
+        # Common Norwegian filler/function words to exclude from repetition checks.
+        # These appear frequently in conversational speech and would otherwise
+        # trigger false positives in both per-segment and cross-segment detection.
+        filler_words = {"ja", "nei", "da", "jo", "vel", "jo", "nå", "så",
+                        "å", "og", "men", "for", "at", "til", "av", "med",
+                        "på", "i", "er", "det", "den", "de", "du", "han",
+                        "hun", "vi", "dere", "man", "sin", "seg", "kan",
+                        "skal", "vil", "må", "har", "hadde", "ble", "blir",
+                        "være", "vært", "bli", "kommer", "går", "sier",
+                        "tror", "vet", "ser", "litt", "bare", "også",
+                        "ikke", "hva", "hvor", "hvordan", "hvorfor",
+                        "når", "hvilken", "hvem", "hvis", "fordi"}
+        # Extended set for cross-segment repetition detection — includes common
+        # pronouns, auxiliary verbs, and high-frequency Norwegian words that
+        # appear naturally across many segments in conversational speech.
+        cross_segment_filler = filler_words | {
+            "jeg", "meg", "deg", "seg", "være", "vært", "blitt", "fått", "hatt",
+            "sagt", "gjort", "tatt", "sett", "hørt", "visst", "kunnet", "måttet",
+            "skulle", "ville", "kunne", "burde", "måtte", "få", "får", "fikk",
+            "gi", "gir", "ga", "gitt", "si", "sier", "sa", "sagt",
+            "gå", "går", "gikk", "gått", "komme", "kommer", "kom", "kommet",
+            "ta", "tar", "tok", "tatt", "se", "ser", "så", "sett",
+            "ha", "har", "hadde", "hatt", "vite", "vet", "visste", "visst",
+            "tro", "tror", "trodd", "tenke", "tenker", "tenkte",
+            "noe", "noen", "noe", "noen", "litt", "mye", "masse",
+            "sånn", "slik", "slike", "samme", "annen", "annet", "andre",
+            "hver", "alle", "begge", "ingen", "ingenting",
+            "opp", "ned", "ut", "inn", "bort", "fram", "tilbake",
+            "her", "der", "hit", "dit", "hjem", "ute", "inne",
+            "alltid", "aldri", "ofte", "sjelden", "nettopp", "akkurat",
+            "kanskje", "sikkert", "egentlig", "faktisk", "nemlig", "riktig",
+        }
+        import re as _re
+        
         for seg in segments:
             flags = []
             scores = []
@@ -324,17 +358,11 @@ class ConfidenceExtractor:
             # in conversational speech (e.g., "ja", "nei", "da", "jo", "vel").
             text_lower = seg.text.lower()
             word_list = text_lower.split()
-            filler_words = {"ja", "nei", "da", "jo", "vel", "jo", "nå", "så",
-                            "å", "og", "men", "for", "at", "til", "av", "med",
-                            "på", "i", "er", "det", "den", "de", "du", "han",
-                            "hun", "vi", "dere", "man", "sin", "seg", "kan",
-                            "skal", "vil", "må", "har", "hadde", "ble", "blir",
-                            "være", "vært", "bli", "kommer", "går", "sier",
-                            "tror", "vet", "ser", "litt", "bare", "også",
-                            "ikke", "hva", "hvor", "hvordan", "hvorfor",
-                            "når", "hvilken", "hvem", "hvis", "fordi"}
-            significant_repeats = [w for w in set(word_list)
-                                   if w not in filler_words and word_list.count(w) >= 3]
+            # Strip punctuation from words for cleaner matching
+            clean_words = [_re.sub(r'[^a-zæøå0-9]', '', w) for w in word_list]
+            clean_words = [w for w in clean_words if w]  # Remove empty strings
+            significant_repeats = [w for w in set(clean_words)
+                                   if w not in filler_words and clean_words.count(w) >= 3]
             if significant_repeats:
                 scores.append(0.6)
                 flags.append(f"repeated_words:{','.join(significant_repeats[:3])}")
@@ -586,11 +614,14 @@ class ConfidenceExtractor:
         # it appears most densely.
         if len(segments) >= 3:
             from collections import Counter
-            # Count word occurrences across all segments (excluding filler words)
+            # Count word occurrences across all segments (excluding filler/function words)
             all_words = []
             for seg in segments:
                 words = seg.text.lower().split()
-                all_words.extend(w for w in words if w not in filler_words and len(w) > 2)
+                # Strip punctuation and exclude filler/function words
+                clean = [_re.sub(r'[^a-zæøå0-9]', '', w) for w in words]
+                clean = [w for w in clean if w and len(w) > 2 and w not in cross_segment_filler]
+                all_words.extend(clean)
             
             word_freq = Counter(all_words)
             if word_freq:

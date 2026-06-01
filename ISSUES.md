@@ -335,11 +335,33 @@ This file tracks known issues, bugs, and feature gaps identified during the proj
   4. **Novelty bonus**: Segments with rare flags (<20% of segments) get +0.1 priority boost; uncommon flags (<40%) get +0.05. This prevents common flags from dominating the score.
   5. **Cross-segment repetition detection**: New third pass detects words appearing 5+ times across 3+ segments (catches "svært"×30 pattern).
 
+- **Fixes applied (v0.1.38):**
+  1. **Cross-segment repetition filler word exclusion**: Added ~80 common Norwegian function words (pronouns, auxiliary verbs, high-frequency adverbs) to the cross-segment repetition exclusion set. Previously, "jeg" (appearing 115× across segments) triggered `cross_segment_repeat` on 94/55 segments (171%). After fix: 39/55 (71%).
+  2. **Punctuation stripping for repeated_words**: `repeated_words` now strips punctuation from words before checking for repetition. Previously, "ja." (with period) was not recognized as the filler word "ja" and triggered false flags. After fix: `repeated_words` dropped from 47/55 (85%) to 18/55 (33%).
+  3. **Scope fix**: Moved `filler_words` and `cross_segment_filler` sets to top of `compute_priority()` to fix `NameError` on empty segments input.
+
+- **Re-validation results (v0.1.38, evaluated against 80% fasit with timestamps):**
+  - **Old Spearman ρ = 0.1850** (p = 0.1763) — different from initial 0.0122 because fasit changed (80% fasit with timestamps vs plain text)
+  - **New Spearman ρ = -0.2770** (p = 0.0406) — still negative (higher priority → lower WER), now statistically significant
+  - **Improvement from old: -0.4620** (worse direction)
+  - **Precision@K:** Old: 100% @1, 33% @3, 40% @5, 40% @10. New: 0% @1, 0% @3, 0% @5, 10% @10.
+  - **Priority histogram improved dramatically:** Old had 46/55 "medium" (84%). New: 6 low, 12 medium-low, 11 medium, 13 medium-high, 13 high — much better spread.
+  - **cross_segment_repeat dropped from 94/55 (171%) to 39/55 (71%)** — filler word exclusion working.
+  - **repeated_words dropped from 47/55 (85%) to 18/55 (33%)** — punctuation stripping working.
+  - **Mean per-segment WER: 91.95%** (vs overall 47.84%) — greedy alignment is noisy.
+
+- **Analysis:**
+  - The negative Spearman correlation (ρ = -0.2770) means segments with HIGHER priority scores tend to have LOWER WER — the opposite of the goal. This is likely because the novelty bonus rewards rare flags, but rare flags often appear on short/trivial segments that happen to have low WER.
+  - The priority histogram is now well-distributed (6/12/11/13/13), which is a significant improvement from the old 46/55 "medium" blob.
+  - The flag distribution is much healthier: no single flag fires on >78% of segments (vs 98% before).
+  - **Root cause of negative correlation:** The current signal mix (alignment, logprob, no_speech_prob, hard-rules) is dominated by acoustic confidence signals that correlate with *good* audio quality, not with transcription errors. Segments with clear audio get high confidence AND low WER, while noisy segments get low confidence AND high WER. The priority score inverts confidence, so it naturally correlates negatively with WER.
+  - **Implication:** Adding more hard-rules won't fix the fundamental issue. The signal mix needs to be rebalanced to prioritize *error-indicating* signals over *quality-indicating* signals.
+
 - **Remaining work:**
-  1. **Re-validate after fixes**: Run confidence validation script against v9 data to verify improved Spearman correlation.
-  2. **Phase B: Logistic regression calibration**: Replace unweighted average with logistic regression trained on ground-truth WER data. Requires multiple runs to account for model non-determinism (#45).
-  3. **Add more discriminating signals**: Cross-model disagreement, acoustic features (SNR, VAD overlap), and per-word confidence distributions.
-  4. **False confidence detection**: Identify segments where the model is "confidently wrong" — high decoder confidence but high WER. These are invisible to current signals.
+  1. **Phase B: Logistic regression calibration**: Replace unweighted average with logistic regression trained on ground-truth WER data. Requires multiple runs to account for model non-determinism (#45).
+  2. **Add more discriminating signals**: Cross-model disagreement, acoustic features (SNR, VAD overlap), and per-word confidence distributions.
+  3. **False confidence detection**: Identify segments where the model is "confidently wrong" — high decoder confidence but high WER. These are invisible to current signals.
+  4. **Signal rebalancing**: The current signal mix is dominated by acoustic confidence (alignment, logprob) which correlates with audio quality, not errors. Need to either (a) weight hard-rules higher than acoustic signals, or (b) remove acoustic signals from the priority computation and rely solely on hard-rules.
 
 - **Discovered during:** Confidence validation analysis (2026-06-01).
 
