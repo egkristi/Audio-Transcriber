@@ -46,8 +46,74 @@ import json
 import numpy as np
 
 from .utils import get_logger, save_json, _NumpyEncoder
+from .dialect_pack import (
+    DialectPack,
+    load_confidence_pairs,
+    load_dialect_words_set,
+    load_common_function_words,
+    get_available_dialects,
+)
 
 logger = get_logger("confidence")
+
+# Module-level cache for dialect data loaded from dialect packs
+_dialect_pairs_cache: Optional[List[Tuple[str, str]]] = None
+_dialect_words_cache: Optional[set] = None
+_common_function_words_cache: Optional[set] = None
+
+
+def _get_dialect_data(region: str = "northern_norwegian"):
+    """Load dialect data from dialect pack, with fallback to hardcoded values.
+    
+    Returns:
+        Tuple of (dialect_pairs, dialect_words_set, common_function_words)
+    """
+    global _dialect_pairs_cache, _dialect_words_cache, _common_function_words_cache
+    
+    if _dialect_pairs_cache is not None:
+        return _dialect_pairs_cache, _dialect_words_cache, _common_function_words_cache
+    
+    try:
+        pack = DialectPack.load(region)
+        pairs = [(p[0], p[1]) for p in pack.confidence_pairs]
+        words = pack.dialect_words
+        func_words = pack.common_function_words
+        _dialect_pairs_cache = pairs
+        _dialect_words_cache = words
+        _common_function_words_cache = func_words
+        logger.debug(f"Loaded dialect data for '{region}' from dialect pack")
+        return pairs, words, func_words
+    except (FileNotFoundError, ValueError, RuntimeError) as e:
+        logger.warning(f"Could not load dialect pack '{region}': {e}. Using hardcoded fallback.")
+        # Fallback values
+        _dialect_pairs_cache = [
+            ("jeg", "æ"), ("meg", "mæ"), ("deg", "dæ"), ("seg", "sæ"),
+            ("dere", "dokker"), ("ikke", "ikkje"), ("hva", "ka"),
+            ("hvor", "kor"), ("hvordan", "korsn"), ("hvorfor", "koffer"),
+            ("bare", "bærre"), ("noe", "no"), ("noen", "nån"),
+            ("mye", "mykje"), ("hun", "ho"), ("være", "vær"),
+            ("gjør", "gjere"), ("kommer", "kjem"), ("går", "gjære"),
+            ("sier", "sei"), ("tror", "trur"), ("vet", "veit"),
+            ("får", "fær"), ("blir", "bli"), ("har", "harr"),
+            ("skal", "ska"), ("kan", "kann"), ("må", "må"),
+            ("vil", "vill"), ("nå", "no"), ("da", "då"),
+            ("opp", "oppi"), ("ned", "nedi"), ("inn", "inni"),
+            ("bort", "borti"), ("fram", "frami"),
+        ]
+        _dialect_words_cache = {
+            "æ", "mæ", "dæ", "sæ", "dokker", "dåkker", "ikkje", "itte",
+            "ka", "kæ", "kor", "korsn", "kordan", "koffer", "koffor",
+            "bærre", "berre", "nån", "nåkkå", "nokka", "mykje",
+            "ho", "hu", "kje", "ska", "veit", "trur", "sei",
+            "no", "ille", "lita", "lite",
+        }
+        _common_function_words_cache = {
+            "jeg", "ikke", "hva", "hvor", "hvordan",
+            "hvorfor", "det", "den", "de", "er", "på",
+            "til", "av", "med", "for", "at", "og",
+            "men", "så", "da", "nå", "jo", "vel",
+        }
+        return _dialect_pairs_cache, _dialect_words_cache, _common_function_words_cache
 
 
 @dataclass
@@ -490,30 +556,9 @@ class ConfidenceExtractor:
             # Eastern Norwegian. These "confidently wrong" substitutions get high
             # decoder confidence but are incorrect for the target dialect.
             # Flag segments where standard forms appear but dialect expected.
-            # Dialect-standard pairs: (standard, dialect)
-            # NOTE: "jeg", "ikke", "hva", "hvor", "hvordan", "hvorfor" are excluded
-            # from the count because they appear in almost every conversational
-            # segment and would otherwise fire on 98% of segments (diluting signal).
-            dialect_pairs = [
-                ("jeg", "æ"), ("meg", "mæ"), ("deg", "dæ"), ("seg", "sæ"),
-                ("dere", "dokker"), ("ikke", "ikkje"), ("hva", "ka"),
-                ("hvor", "kor"), ("hvordan", "korsn"), ("hvorfor", "koffer"),
-                ("bare", "bærre"), ("noe", "no"), ("noen", "nån"),
-                ("mye", "mykje"), ("hun", "ho"), ("være", "vær"),
-                ("gjør", "gjere"), ("kommer", "kjem"), ("går", "gjære"),
-                ("sier", "sei"), ("tror", "trur"), ("vet", "veit"),
-                ("får", "fær"), ("blir", "bli"), ("har", "harr"),
-                ("skal", "ska"), ("kan", "kann"), ("må", "må"),
-                ("vil", "vill"), ("nå", "no"), ("da", "då"),
-                ("opp", "oppi"), ("ned", "nedi"), ("inn", "inni"),
-                ("bort", "borti"), ("fram", "frami"),
-            ]
-            # Common function words that appear in almost every segment — exclude
-            # from dialect counting to avoid diluting the signal.
-            common_function_words = {"jeg", "ikke", "hva", "hvor", "hvordan",
-                                     "hvorfor", "det", "den", "de", "er", "på",
-                                     "til", "av", "med", "for", "at", "og",
-                                     "men", "så", "da", "nå", "jo", "vel"}
+            # Dialect data is loaded from dialect packs (data/dialects/*.json)
+            # with fallback to hardcoded values.
+            dialect_pairs, dialect_words_set, common_function_words = _get_dialect_data()
             dialect_standard_count = 0
             dialect_expected_forms = []
             for standard, dialect in dialect_pairs:
@@ -535,13 +580,6 @@ class ConfidenceExtractor:
             # 24. HARD RULE: Dialect form detection (mixed dialect-standard)
             # If a segment contains BOTH dialect and standard forms of the same word,
             # it indicates Whisper is confused about the dialect register.
-            dialect_words_set = {
-                "æ", "mæ", "dæ", "sæ", "dokker", "dåkker", "ikkje", "itte",
-                "ka", "kæ", "kor", "korsn", "kordan", "koffer", "koffor",
-                "bærre", "berre", "nån", "nåkkå", "nokka", "mykje",
-                "ho", "hu", "kje", "ska", "veit", "trur", "sei",
-                "no", "ille", "lita", "lite",
-            }
             dialect_words_found = [w for w in word_list if w in dialect_words_set]
             if dialect_words_found:
                 # Check for mixed register: dialect + standard of same concept

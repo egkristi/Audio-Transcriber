@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 from .utils import get_logger, load_json, save_json
+from .dialect_pack import DialectPack, load_dialect_vocabulary, get_available_dialects
 
 logger = get_logger("vocabulary")
 
@@ -173,13 +174,24 @@ class VocabularyManager:
         prompt_parts_lower = [w.lower() for w in prompt_parts]
         
         # Separate dialect words from proper nouns/other vocabulary
-        dialect_words = [w for w in prompt_parts_lower if w in {
-            'æ', 'mæ', 'dæ', 'sæ', 'dokker', 'dåkker', 'ikkje', 'itte',
-            'ka', 'kæ', 'kor', 'korsn', 'kordan', 'koffer', 'koffor',
-            'bærre', 'berre', 'nån', 'nåkkå', 'nokka', 'mykje',
-            'ho', 'hu', 'kje', 'ska', 'veit', 'trur', 'sei',
-            'no', 'ille', 'lita', 'lite', 'e', 'je', 'ha',
-        }]
+        # Load dialect words from dialect packs for accurate separation
+        _dialect_word_set: Set[str] = set()
+        for _region in get_available_dialects():
+            try:
+                _pack = DialectPack.load(_region)
+                _dialect_word_set.update(_pack.dialect_words)
+            except (FileNotFoundError, ValueError, RuntimeError):
+                pass
+        # Fallback: include known Northern Norwegian dialect words
+        if not _dialect_word_set:
+            _dialect_word_set = {
+                'æ', 'mæ', 'dæ', 'sæ', 'dokker', 'dåkker', 'ikkje', 'itte',
+                'ka', 'kæ', 'kor', 'korsn', 'kordan', 'koffer', 'koffor',
+                'bærre', 'berre', 'nån', 'nåkkå', 'nokka', 'mykje',
+                'ho', 'hu', 'kje', 'ska', 'veit', 'trur', 'sei',
+                'no', 'ille', 'lita', 'lite', 'e', 'je', 'ha',
+            }
+        dialect_words = [w for w in prompt_parts_lower if w in _dialect_word_set]
         other_words = [w for w in prompt_parts if w.lower() not in dialect_words]
         
         prompt_pieces = []
@@ -307,94 +319,50 @@ class CommonNorwegianVocabulary:
         "NRK", "TV2", "Aftenposten", "VG"
     ]
     
-    # Northern Norwegian dialect words for vocabulary injection.
-    # These help Whisper recognize dialect forms instead of normalizing
-    # them to standard Eastern Norwegian.
-    # Grouped by category for organized prompt generation.
-    DIALECT_VOCABULARY = {
+    # Dialect vocabulary and markers are now loaded from data/dialects/*.json
+    # via the DialectPack loader. The hardcoded dictionaries below serve as
+    # fallbacks when the dialect pack files cannot be loaded.
+    # See src/dialect_pack.py and data/dialects/ for the canonical data.
+    
+    # Fallback: Northern Norwegian dialect words for vocabulary injection.
+    DIALECT_VOCABULARY_FALLBACK = {
         "northern_norwegian": {
-            # First person pronouns (8 words)
             "pronouns": ["æ", "mæ", "dæ", "sæ", "dokker", "dåkker", "ho", "hu"],
-            # Negation (3 words)
             "negation": ["ikkje", "itte", "ikke"],
-            # Question words (7 words)
             "questions": ["ka", "kæ", "kor", "korsn", "kordan", "koffer", "koffor"],
-            # Adverbs and particles (12 words)
-            "adverbs": [
-                "bærre", "berre", "nån", "nåkkå", "nokka", "mykje",
-                "sånn", "slik", "nærmest", "akkurat", "kanskje", "kanke",
-            ],
-            # Common verbs in dialect form (14 words)
-            "verbs": [
-                "e", "je", "ha", "kje", "ska", "være", "gjøre",
-                "komme", "gå", "sei", "trur", "veit", "får", "bli",
-            ],
-            # Common nouns / expressions (8 words)
+            "adverbs": ["bærre", "berre", "nån", "nåkkå", "nokka", "mykje", "sånn", "slik", "nærmest", "akkurat", "kanskje", "kanke"],
+            "verbs": ["e", "je", "ha", "kje", "ska", "være", "gjøre", "komme", "gå", "sei", "trur", "veit", "får", "bli"],
             "expressions": ["no", "ille", "lita", "lite", "stor", "små", "godt", "mye"],
-            # Time and quantity (12 words)
-            "time_quantity": [
-                "nå", "da", "sida", "sist", "førr", "etter", "oppi",
-                "inni", "borti", "fram", "tilbake", "nedi",
-            ],
-            # Prepositions and conjunctions (10 words)
-            "prepositions": [
-                "oppå", "nedpå", "innpå", "bortpå", "frampå",
-                "oppi", "inni", "borti", "atti", "forran",
-            ],
-            # Adjectives and descriptors (12 words)
-            "adjectives": [
-                "fin", "stygg", "bra", "dårlig", "vanskelig", "lett",
-                "lang", "kort", "stor", "liten", "gammal", "ny",
-            ],
-            # Telephony / call vocabulary (12 words)
-            "telephony": [
-                "telefon", "mobil", "ring", "samtale", "beskjed",
-                "melding", "nummer", "svar", "ringte", "ringer",
-                "oppringt", "anrop",
-            ],
-            # Family and people (10 words)
-            "people": [
-                "mamma", "pappa", "bror", "søster", "bestefar",
-                "bestemor", "tante", "onkel", "venn", "nabo",
-            ],
-            # Places and locations (10 words)
-            "places": [
-                "hjemme", "borte", "skolen", "jobben", "butikken",
-                "sentrum", "byen", "landet", "sjukehus", "legevakt",
-            ],
+            "time_quantity": ["nå", "da", "sida", "sist", "førr", "etter", "oppi", "inni", "borti", "fram", "tilbake", "nedi"],
+            "prepositions": ["oppå", "nedpå", "innpå", "bortpå", "frampå", "oppi", "inni", "borti", "atti", "forran"],
+            "adjectives": ["fin", "stygg", "bra", "dårlig", "vanskelig", "lett", "lang", "kort", "stor", "liten", "gammal", "ny"],
+            "telephony": ["telefon", "mobil", "ring", "samtale", "beskjed", "melding", "nummer", "svar", "ringte", "ringer", "oppringt", "anrop"],
+            "people": ["mamma", "pappa", "bror", "søster", "bestefar", "bestemor", "tante", "onkel", "venn", "nabo"],
+            "places": ["hjemme", "borte", "skolen", "jobben", "butikken", "sentrum", "byen", "landet", "sjukehus", "legevakt"],
         }
     }
     
-    # Dialect region detection markers.
-    # Each dialect has distinctive words that identify it.
-    # Format: dialect_region -> {set of distinctive words, weight}
-    DIALECT_MARKERS = {
+    # Fallback: Dialect region detection markers.
+    DIALECT_MARKERS_FALLBACK = {
         "northern_norwegian": {
-            "words": {"æ", "mæ", "dæ", "sæ", "dokker", "dåkker", "ikkje",
-                      "itte", "ka", "kæ", "kor", "korsn", "kordan", "koffer",
-                      "koffor", "bærre", "nåkkå", "nokka", "mykje", "ho",
-                      "hu", "kje", "no", "ille"},
-            "weight": 2.0,  # Strong signal
+            "words": {"æ", "mæ", "dæ", "sæ", "dokker", "dåkker", "ikkje", "itte", "ka", "kæ", "kor", "korsn", "kordan", "koffer", "koffor", "bærre", "nåkkå", "nokka", "mykje", "ho", "hu", "kje", "no", "ille"},
+            "weight": 2.0,
         },
         "trondersk": {
-            "words": {"æ", "dæm", "hainn", "kæm", "sånn", "int", "itt",
-                      "kass", "korsn", "bærre", "nå", "dæ", "mæ"},
+            "words": {"æ", "dæm", "hainn", "kæm", "sånn", "int", "itt", "kass", "korsn", "bærre", "nå", "dæ", "mæ"},
             "weight": 2.0,
         },
         "vestlandsk": {
-            "words": {"eg", "ikkje", "kva", "korleis", "kvi", "deg",
-                      "meg", "seg", "no", "ikkje"},
+            "words": {"eg", "ikkje", "kva", "korleis", "kvi", "deg", "meg", "seg", "no"},
             "weight": 2.0,
         },
         "sorlandsk": {
-            "words": {"æ", "dæ", "kæm", "kordan", "itte", "kva",
-                      "mæ", "sæ", "no"},
+            "words": {"æ", "dæ", "kæm", "kordan", "itte", "kva", "mæ", "sæ", "no"},
             "weight": 2.0,
         },
         "ostlandsk": {
-            "words": {"jæ", "dæ", "sæ", "kæ", "sånn", "kanke",
-                      "mæ", "dere", "ikke"},
-            "weight": 1.5,  # Weaker signal (closer to standard)
+            "words": {"jæ", "dæ", "sæ", "kæ", "sånn", "kanke", "mæ", "dere", "ikke"},
+            "weight": 1.5,
         },
     }
     
@@ -402,8 +370,9 @@ class CommonNorwegianVocabulary:
     def detect_dialect(text: str) -> Optional[str]:
         """Auto-detect dialect region from transcribed text.
         
-        Analyzes the text for distinctive dialect markers and returns
-        the most likely dialect region, or None if no clear match.
+        Delegates to DialectPack.detect_dialect() which loads dialect
+        markers from data/dialects/*.json files. Falls back to hardcoded
+        markers if dialect pack files cannot be loaded.
         
         Args:
             text: Transcribed text to analyze
@@ -414,11 +383,20 @@ class CommonNorwegianVocabulary:
         if not text or not text.strip():
             return None
         
+        # Try loading from dialect packs first
+        try:
+            result = DialectPack.detect_dialect(text)
+            if result is not None:
+                return result
+        except Exception:
+            pass
+        
+        # Fallback: use hardcoded markers
         text_lower = text.lower()
         words = set(text_lower.split())
         
         scores = {}
-        for region, markers in CommonNorwegianVocabulary.DIALECT_MARKERS.items():
+        for region, markers in CommonNorwegianVocabulary.DIALECT_MARKERS_FALLBACK.items():
             matches = words & markers["words"]
             if matches:
                 score = len(matches) * markers["weight"]
@@ -427,10 +405,9 @@ class CommonNorwegianVocabulary:
         if not scores:
             return None
         
-        # Return region with highest score
         best = max(scores, key=scores.get)
         logger.info(
-            f"Dialect detection: {best} "
+            f"Dialect detection (fallback): {best} "
             f"(scores: {dict(sorted(scores.items(), key=lambda x: -x[1]))})"
         )
         return best
@@ -444,19 +421,29 @@ class CommonNorwegianVocabulary:
     def get_dialect_vocabulary(dialect: str = "northern_norwegian") -> List[str]:
         """Get dialect-specific vocabulary for Whisper prompt injection.
         
+        Loads from dialect pack data files (data/dialects/<dialect>.json).
+        Falls back to hardcoded vocabulary if the dialect pack cannot be loaded.
+        
         Flattens the categorized dialect words into a single list.
         These words are injected into Whisper's initial_prompt so the
         model is more likely to transcribe dialect forms correctly
         instead of normalizing to standard Eastern Norwegian.
         
         Args:
-            dialect: Dialect region key. Currently only
-                     "northern_norwegian" is supported.
+            dialect: Dialect region key (e.g. "northern_norwegian",
+                     "trondersk", "vestlandsk", "sorlandsk", "ostlandsk")
         
         Returns:
             List of dialect words for the requested region.
         """
-        categories = CommonNorwegianVocabulary.DIALECT_VOCABULARY.get(dialect, {})
+        # Try loading from dialect pack first
+        try:
+            return load_dialect_vocabulary(dialect)
+        except (FileNotFoundError, ValueError, RuntimeError):
+            pass
+        
+        # Fallback to hardcoded vocabulary
+        categories = CommonNorwegianVocabulary.DIALECT_VOCABULARY_FALLBACK.get(dialect, {})
         words: List[str] = []
         for category_words in categories.values():
             words.extend(category_words)

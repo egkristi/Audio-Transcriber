@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 10: Pluggable dialect packs** — dialect data extracted from hardcoded Python dicts into standalone JSON files under `data/dialects/`. Five dialect regions supported: `northern_norwegian`, `trondersk`, `vestlandsk`, `sorlandsk`, `ostlandsk`. Each pack contains `dialect_map`, `markers`, `vocabulary`, `confidence_pairs`, and `common_function_words`. New `src/dialect_pack.py` provides `DialectPack` class with unified loading, caching, dialect detection, and convenience functions (`load_dialect_map`, `load_dialect_vocabulary`, `load_confidence_pairs`, `get_available_dialects`). All consumers (`normalize.py`, `vocabulary.py`, `confidence.py`) load from dialect packs with fallback to hardcoded values. (ROADMAP.md Phase 10)
 - **Phase 11: Fully automated pipeline** — new ROADMAP.md phase for auto-detecting language and dialect per file, then optimizing models, VAD parameters, decoding parameters, and normalization rules accordingly. Covers: language detection with confidence-based routing, dialect auto-detection from text markers, per-language model routing, per-dialect VAD/decoding profiles, graceful fallback chain, batch-mode optimization, CLI simplification, and detection reporting. (ROADMAP.md)
 
 ### Changed

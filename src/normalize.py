@@ -39,8 +39,39 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from .utils import get_logger
+from .dialect_pack import DialectPack, load_dialect_map
 
 logger = get_logger("normalize")
+
+# Module-level cache for the dialect map
+_dialect_map_cache: Optional[Dict[str, str]] = None
+
+
+def _get_dialect_map(region: str = "northern_norwegian") -> Dict[str, str]:
+    """
+    Get the dialect-to-standard map, loading from dialect pack if available.
+    
+    Falls back to the hardcoded NORWEGIAN_DIALECT_MAP if the dialect pack
+    file cannot be loaded.
+    
+    Args:
+        region: Dialect region key (default: "northern_norwegian")
+        
+    Returns:
+        Dict mapping dialect words to standard equivalents
+    """
+    global _dialect_map_cache
+    if _dialect_map_cache is not None:
+        return _dialect_map_cache
+    
+    try:
+        _dialect_map_cache = load_dialect_map(region)
+        logger.debug(f"Loaded dialect map for '{region}' from dialect pack")
+        return _dialect_map_cache
+    except (FileNotFoundError, ValueError, RuntimeError) as e:
+        logger.warning(f"Could not load dialect pack '{region}': {e}. Using hardcoded fallback.")
+        _dialect_map_cache = dict(NORWEGIAN_DIALECT_MAP)
+        return _dialect_map_cache
 
 
 # Norwegian character mappings: common Whisper substitutions
@@ -473,12 +504,13 @@ def normalize_norwegian_text(
             })
     
     # 7b. Flag dialect-standard mismatches (informational only)
-    # Northern Norwegian dialect is valid — we flag but don't correct
+    # Dialect is valid Norwegian — we flag but don't correct
     # When preserve_dialect=True, skip dialect flagging entirely
     if not preserve_dialect:
+        dialect_map = _get_dialect_map()
         for i, word in enumerate(word_list):
-            if word in NORWEGIAN_DIALECT_MAP:
-                standard = NORWEGIAN_DIALECT_MAP[word]
+            if word in dialect_map:
+                standard = dialect_map[word]
                 if word != standard:
                     corrections.append({
                         "original": word,
